@@ -1,0 +1,133 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "Item Recommendation API",
+    "description": "API for fetching recommended items for a customer, serving images, and viewing purchase history",
+    "version": "1.0.0"
+  },
+  "host": "localhost:5000",
+  "schemes": ["http"],
+  "paths": {
+    "/api/items": {
+      "get": {
+        "summary": "Get recommended items",
+        "description": "Fetches a list of recommended items for a customer",
+        "parameters": [
+          {
+            "name": "customer_id",
+            "in": "query",
+            "required": true,
+            "type": "string",
+            "description": "ID of the customer",
+            "default": "0000423b00ade91418cceaf3b26c6af3dd342b51fd051eec9c12fb36984420fa"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A list of recommended items",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "article_id": { "type": "integer" },
+                  "product_code": { "type": "integer" },
+                  "prod_name": { "type": "string" },
+                  "product_type_no": { "type": "integer" },
+                  "product_type_name": { "type": "string" },
+                  "product_group_name": { "type": "string" },
+                  "graphical_appearance_no": { "type": "integer" },
+                  "graphical_appearance_name": { "type": "string" },
+                  "colour_group_code": { "type": "integer" },
+                  "colour_group_name": { "type": "string" },
+                  "perceived_colour_value_id": { "type": "integer" },
+                  "perceived_colour_value_name": { "type": "string" },
+                  "perceived_colour_master_id": { "type": "integer" },
+                  "perceived_colour_master_name": { "type": "string" },
+                  "department_no": { "type": "integer" },
+                  "department_name": { "type": "string" },
+                  "index_code": { "type": "string" },
+                  "index_name": { "type": "string" },
+                  "index_group_no": { "type": "integer" },
+                  "index_group_name": { "type": "string" },
+                  "section_no": { "type": "integer" },
+                  "section_name": { "type": "string" },
+                  "garment_group_no": { "type": "integer" },
+                  "garment_group_name": { "type": "string" },
+                  "detail_desc": { "type": "string" },
+                  "image_url": { "type": "string" },
+                  "liked": { "type": "boolean" }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Customer ID is required"
+          }
+        }
+      }
+    },
+    "/images/{filename}": {
+      "get": {
+        "summary": "Serve image files",
+        "description": "Returns an image file stored in the static directory",
+        "parameters": [
+          {
+            "name": "filename",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "description": "Path to the image file"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Image file"
+          },
+          "404": {
+            "description": "File not found"
+          }
+        }
+      }
+    },
+    "/api/purchases": {
+      "get": {
+        "summary": "Get customer purchases",
+        "description": "Fetches a list of purchases made by a specified customer",
+        "parameters": [
+          {
+            "name": "customer_id",
+            "in": "query",
+            "required": true,
+            "type": "string",
+            "description": "ID of the customer whose purchase history is to be retrieved",
+            "default": "0000423b00ade91418cceaf3b26c6af3dd342b51fd051eec9c12fb36984420fa"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A list of purchases",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "purchase_id": { "type": "integer" },
+                  "article_id": { "type": "integer" },
+                  "quantity": { "type": "integer" },
+                  "purchase_date": { "type": "string", "format": "date-time" }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Customer ID is required"
+          },
+          "404": {
+            "description": "No purchases found for this customer"
+          }
+        }
+      }
+    }
+  }
+}
