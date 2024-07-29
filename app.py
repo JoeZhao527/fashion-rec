@@ -5,6 +5,8 @@ from flask_cors import CORS
 import pandas as pd
 import os
 import ast
+from typing import List, Dict
+from recommender.recommender import RecommenderSystem
 
 app = Flask(__name__, static_folder='static')
 CORS(app)  # This will enable CORS for all routes
@@ -22,36 +24,28 @@ swaggerui_blueprint = get_swaggerui_blueprint(
 )
 app.register_blueprint(swaggerui_blueprint, url_prefix=SWAGGER_URL)
 
-# Load item data from CSV
-items_df = pd.read_csv(r'C:\Users\Administrator\Desktop\h-and-m-personalized-fashion-recommendations\dataset\articles.csv')
-purchase_df = pd.read_csv(r'C:\Users\Administrator\Desktop\h-and-m-personalized-fashion-recommendations\dataset\actual_purchases.csv')
+recommender_system = RecommenderSystem(
+    article_path="./dataset/articles.csv",
+    customer_path="./dataset/customers.csv",
+    train_path="./dataset/split/fold_0/train.csv",
+    test_path="./dataset/split/fold_0/test.csv",
+    img_cluster_path="./resources/img_cluster_2000.csv",
+    dev_mode=True,
+    cache_dir="./cache/fold_0"
+)
 
-def get_items_by_ids(item_ids):
-    # Convert article_id to integer to handle scientific notation
-    items_df['article_id'] = items_df['article_id'].apply(lambda x: int(float(x)))
+def get_items_by_ids(items: List[dict]):
+    for item in items:
+        item['liked'] = True
+        item['image_url'] = get_image_path(item['article_id'])
 
-    # Filter the DataFrame for the given item IDs
-    filtered_items = items_df[items_df['article_id'].isin(item_ids)]
-
-    # Define a helper function to update rows
-    def update_item(row):
-        row['liked'] = True
-        row['image_url'] = get_image_path(row['article_id'])
-        return row
-
-    # Apply the helper function to each row in the filtered DataFrame
-    updated_items = filtered_items.apply(update_item, axis=1)
-
-    # Convert the updated DataFrame to a list of dictionaries
-    item_details = updated_items.to_dict(orient='records')
-    return item_details
+    return items
 
 def get_image_path(item_id):
     item_id_str = str(item_id)
     folder_number = '0' + item_id_str[:2]  # Ensure this logic matches your folder structure
     item_id_str = '0' + item_id_str
     image_url = f'http://localhost:5000/images/{folder_number}/{item_id_str}.jpg'
-    print(image_url)
     return image_url
 
 @app.route('/api/items', methods=['GET'])
@@ -59,19 +53,14 @@ def get_items():
     customer_id = request.args.get('customer_id')
     if not customer_id:
         return jsonify({'message': 'Customer ID is required'}), 400
-    items = items_df.to_dict(orient='records')
-    customer_purchases = purchase_df[purchase_df['customer_id'] == customer_id]['article_id']
-    liked_items = eval(customer_purchases.iloc[0]) if not customer_purchases.empty else []
-
-    # TODO make the real recommend in here
     
-    recommended_items = items[:10]
-    for item in recommended_items:
-        item['liked'] = item['article_id'] in liked_items
-        item['image_url'] = get_image_path(item['article_id'])
+    item_ids = recommender_system.recommend(customer_id)
+    items = recommender_system.get_items_by_ids(item_ids)
+    recommended_items = get_items_by_ids(items)
+
     return jsonify(recommended_items)
 
-@app.route('/images/<path:filename>')
+@app.route('/images/<path:filename>', methods=['GET'])
 def send_image(filename):
     return send_from_directory(app.static_folder + "/images", filename)
 
@@ -82,7 +71,7 @@ def get_purchases():
         return jsonify({'error': 'Customer ID is required'}), 400
 
     # Filter the purchase DataFrame for the given customer ID
-    customer_purchases = purchase_df[purchase_df['customer_id'] == customer_id]
+    customer_purchases = recommender_system.get_user_purchased(customer_id)
 
     if customer_purchases.empty:
         return jsonify({'message': 'No purchases found for this customer'}), 404
@@ -96,8 +85,8 @@ def get_purchases():
     # Flatten the list if it contains sublists
     flat_item_ids = [item for sublist in item_ids for item in sublist]
 
-    # Get detailed item info using the get_items_by_ids function
-    detailed_items = get_items_by_ids(flat_item_ids)
+    detailed_items = recommender_system.get_items_by_ids(flat_item_ids)
+    detailed_items = get_items_by_ids(detailed_items)
 
     return jsonify(detailed_items)
 
