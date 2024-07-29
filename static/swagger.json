@@ -19,7 +19,7 @@
             "required": true,
             "type": "string",
             "description": "ID of the customer",
-            "default": "0000423b00ade91418cceaf3b26c6af3dd342b51fd051eec9c12fb36984420fa"
+            "default": "001cc0d386cd17259b4c18407e3c8303afc9762ea87557c718642f8c5004ae7a"
           }
         ],
         "responses": {
@@ -101,7 +101,7 @@
             "required": true,
             "type": "string",
             "description": "ID of the customer whose purchase history is to be retrieved",
-            "default": "0000423b00ade91418cceaf3b26c6af3dd342b51fd051eec9c12fb36984420fa"
+            "default": "001cc0d386cd17259b4c18407e3c8303afc9762ea87557c718642f8c5004ae7a"
           }
         ],
         "responses": {

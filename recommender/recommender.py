@@ -440,10 +440,22 @@ class RecommenderSystem:
         # Convert the updated DataFrame to a list of dictionaries
         item_details = filtered_items.to_dict(orient='records')
         return item_details
-    
-    def get_user_purchased(self, customer_id: str) -> pd.DataFrame:
-        return self.train[self.train['customer_id'] == customer_id]
-    
+
+    def get_user_purchased(self, customer_id: str) -> list:
+        actual_purchases = self.train.groupby('customer_id')['article_id'].agg(list)
+        return actual_purchases[customer_id] if customer_id in actual_purchases else []
+
+    def get_items_by_ids(self, item_ids: list) -> List[dict]:
+        items = []
+        for item_id in item_ids:
+            item_details = self.articles[self.articles['article_id'] == item_id].to_dict(orient='records')
+            if item_details:
+                item = item_details[0]
+                item['liked'] = False
+                item['image_url'] = get_image_path(item_id)
+                items.append(item)
+        return items
+
 if __name__ == '__main__':
     system = RecommenderSystem(
         article_path="./dataset/articles.csv",
