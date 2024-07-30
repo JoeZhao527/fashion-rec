@@ -125,7 +125,7 @@ def get_image_path(item_id):
     folder_number = '0' + item_id_str[:2]  # Ensure this logic matches your folder structure
     item_id_str = '0' + item_id_str
     image_url = f'http://localhost:5000/images/{folder_number}/{item_id_str}.jpg'
-    print(image_url)
+    # print(image_url)
     return image_url
 
 class RecommenderSystem:

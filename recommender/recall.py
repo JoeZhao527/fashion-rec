@@ -36,157 +36,114 @@ def popularity_recall(train: pd.DataFrame, *args, **kwargs):
 
 
 def item2vec_recall(train: pd.DataFrame, articles: pd.DataFrame, top_N: int, *args, **kwargs):
-    # Group by customer and list all articles they have purchased
     positive_samples = train.groupby('customer_id')['article_id'].agg(list).reset_index()
-
-    # All unique articles
     all_articles = set(articles['article_id'].astype(str))
 
     training_data = []
     for _, row in tqdm(positive_samples.iterrows(), total=len(positive_samples), desc="item2vec data prepare"):
-        training_data.append(row['article_id'])  # Positive sentence
+        training_data.append(row['article_id'])
 
     for purchase in training_data:
         random.shuffle(purchase)
         
-    print(len(training_data))
+    model = Word2Vec(sentences=training_data,
+                     epochs=10,
+                     min_count=10,
+                     vector_size=128,
+                     workers=6,
+                     sg=1,
+                     hs=0,
+                     negative=5,
+                     window=9999)
 
-    # Calculate the length of each sublist
-    lengths = [len(sublist) for sublist in training_data]
+    item_vectors = {item: model.wv[item] for item in model.wv.index_to_key}
+    vector_size = model.vector_size
 
-    # Count the frequency of each length
-    length_distribution = Counter(lengths)
-
-    # Print the length distribution
-    print("Length distribution of sublists:")
-    for length, count in sorted(length_distribution.items())[:10]:
-        print(f"Length {length}: {count} times")
-
-    start = time.time()
-
-    model = Word2Vec(sentences=training_data,  # pre-processed list of movie lists
-                    epochs=10,                # number of iterations over the corpus
-                    min_count=10,            # movies need to appear more than 10 times
-                    vector_size=128,         # embedding vector size
-                    workers=6,               # number of threads to use for training
-                    sg=1,                    # using skip-gram algorithm
-                    hs=0,                    # hierarchical softmax not used, we use negative sampling instead
-                    negative=5,              # number of negative samples
-                    window=9999)               # context window size
-
-    duration = time.time() - start
-    print("Time passed: {:.2f} seconds".format(duration))
-    # To save the model for later use
-    # model.save('item2vec.model')
-    train_loss =  model.get_latest_training_loss()
-    print(f"Latest training loss: {train_loss}")
-
-    # Group transactions by user and collect all item IDs per user
     user_items = train.groupby('customer_id')['article_id'].apply(list)
+    user_profiles = calculate_user_profiles(user_items, item_vectors, vector_size)
 
-    # Define a function to calculate the average vector of items per user
-    def calculate_user_profile(item_ids, model):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    item_list = list(all_articles)
+    item_vectors_norm = np.stack([item_vectors[item] for item in item_list])
+    norms = np.linalg.norm(item_vectors_norm, axis=1, keepdims=True)
+    item_vectors_norm = item_vectors_norm / norms
+
+    user_recommendations = calculate_item_similarities(user_profiles, item_vectors_norm, item_list, top_N, device)
+
+    return user_recommendations
+
+def calculate_user_profiles(user_items: pd.Series, item_vectors: Dict[str, np.ndarray], vector_size: int) -> pd.Series:
+    """
+    Calculate user profiles based on item embeddings.
+
+    Parameters:
+    user_items (pd.Series): Series where index is user_id and value is list of article_ids.
+    item_vectors (Dict[str, np.ndarray]): Dictionary of item embeddings.
+    vector_size (int): Size of the embedding vectors.
+
+    Returns:
+    pd.Series: Series where index is user_id and value is the average embedding vector.
+    """
+    def calculate_user_profile(item_ids):
         vectors = []
         for item_id in item_ids:
-            if item_id in model.wv.key_to_index:  # Check if the item is in the model's vocabulary
-                vectors.append(model.wv[item_id])
-        if vectors:  # If there are any vectors, calculate the average
+            if item_id in item_vectors:
+                vectors.append(item_vectors[item_id])
+        if vectors:
             return np.mean(vectors, axis=0)
         else:
-            return np.zeros(model.vector_size)  # Return a zero vector if no items are in the vocabulary
+            return np.zeros(vector_size)
+    
+    user_profiles = user_items.apply(calculate_user_profile)
+    return user_profiles
 
-    # Calculate user profiles
-    user_profiles = user_items.apply(calculate_user_profile, model=model)
+def calculate_item_similarities(user_profiles: pd.Series, item_vectors_norm: np.ndarray, item_ids: List[str], top_N: int, device: str) -> Dict[str, List[str]]:
+    """
+    Calculate item similarities and get top recommendations for each user.
 
-    # Print the shape of the user_profiles DataFrame
-    print("Shape of user_profiles:", user_profiles.shape)
+    Parameters:
+    user_profiles (pd.Series): Series where index is user_id and value is the average embedding vector.
+    item_vectors_norm (np.ndarray): Normalized item vectors.
+    item_ids (List[str]): List of item IDs corresponding to the item vectors.
+    top_N (int): Number of top recommendations to return for each user.
+    device (str): Device to use for computation ('cpu' or 'cuda').
 
-    # Check the data type of the first item to ensure consistency
-    if len(user_profiles) > 0:
-        first_element = user_profiles.iloc[0]
-        print("Data type of user profiles:", type(first_element))
-        print("Length of a single user profile vector:", len(first_element))
+    Returns:
+    Dict[str, List[str]]: Dictionary where key is user_id and value is list of recommended article_ids.
+    """
+    if device == "cpu":
+        user_ids = user_profiles.index.tolist()
+        user_vectors = np.vstack(user_profiles.values)
 
-    # Check for null values
-    null_data = user_profiles.isnull().any()
-    print("Any null user profiles?:", null_data)
-
-    # Set the device to GPU if available
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
-
-    # Assuming `model` and `user_profiles` are already defined
-    # Convert item vectors to a tensor and move to the device
-    item_ids = list(model.wv.index_to_key)
-
-    if str(device) == "cpu":
-        # Using NumPy instead of PyTorch tensors
-        norms = []
-        item_vectors = np.stack([model.wv[item] for item in item_ids])
-        
-        # Loop through each row in the tensor
-        for i in tqdm(range(item_vectors.shape[0]), desc="item2vec data prepare"):
-            sum_of_squares = 0
-            # Loop through each element in the row
-            for j in range(item_vectors.shape[1]):
-                sum_of_squares += item_vectors[i, j] ** 2
-            # Compute the norm (square root of the sum of squares)
-            norm = math.sqrt(sum_of_squares)
-            norms.append(norm)
-
-        # Convert the list of norms to a NumPy array and reshape for broadcasting
-        norms_arr = np.array(norms).reshape(-1, 1)
-
-        # Normalize item vectors
-        item_vectors_norm = item_vectors / norms_arr
-
-        # Convert user profiles to a NumPy array
-        user_ids = list(user_profiles.keys())
-        user_vectors = np.vstack(user_profiles.values)  # Ensure user_profiles is converted to 2D array
-
-        # Normalize user vectors
-        user_norms = np.linalg.norm(user_vectors, axis=1).reshape(-1, 1)
+        user_norms = np.linalg.norm(user_vectors, axis=1, keepdims=True)
         user_vectors_norm = user_vectors / user_norms
 
-        # Compute cosine similarity
         similarities = np.dot(user_vectors_norm, item_vectors_norm.T)
 
-        # Get top 12 recommendations for each user
         top_indices = np.argsort(-similarities, axis=1)[:, :top_N]
-        
-        # Map indices to item IDs
+
         user_recommendations = {
             user_ids[i]: [item_ids[idx] for idx in top_indices[i]]
             for i in range(len(user_ids))
         }
     else:
-        item_vectors = torch.tensor([model.wv[item] for item in item_ids], dtype=torch.float, device=device)
-        item_vectors_norm = item_vectors / item_vectors.norm(dim=1, keepdim=True)
+        item_vectors_norm = torch.tensor(item_vectors_norm, dtype=torch.float, device=device)
 
-        # Convert user profiles to a tensor
-        user_ids = list(user_profiles.keys())
+        user_ids = user_profiles.index.tolist()
         user_vectors = torch.tensor(list(user_profiles.values), dtype=torch.float, device=device)
 
-        # Define batch size
         batch_size = 32
 
-        # Function to process batches and get recommendations
         def process_batch(start_idx, end_idx):
-            # Slice the batch
             batch_user_vectors = user_vectors[start_idx:end_idx]
             batch_user_vectors_norm = batch_user_vectors / batch_user_vectors.norm(dim=1, keepdim=True)
             
-            # Compute cosine similarity
             similarities = torch.mm(batch_user_vectors_norm, item_vectors_norm.t())
-            
-            # Get top N recommendations for each user in the batch
             top_indices = torch.topk(similarities, top_N, dim=1).indices
             
-            # Map indices to item IDs
             return {user_ids[i]: [item_ids[idx] for idx in top_indices[row_index].cpu().tolist()]
                     for row_index, i in enumerate(range(start_idx, end_idx))}
 
-        # Process all batches and collect recommendations
         user_recommendations = {}
         for start_idx in tqdm(range(0, len(user_vectors), batch_size)):
             end_idx = min(start_idx + batch_size, len(user_vectors))
