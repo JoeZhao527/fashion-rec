@@ -168,7 +168,7 @@ class RecommenderSystem:
         self.rank_test = rank_test
 
         print(f"Ranking...")
-        self.recommendations = self._ranking()
+        self.recommendations = self._ranking().groupby('customer_id')['article_id'].agg(list)
 
     def _init_data(self, train_path, test_path):
         train = pd.read_csv(train_path)
@@ -188,6 +188,7 @@ class RecommenderSystem:
 
         # Use test period data to test top N recommendation performance
         self.test = test
+        self.actual_purchases = self.train.groupby('customer_id')['article_id'].agg(list)
 
     def _recall(self):
         metrics_res_path = os.path.join(self.recall_cache_dir, "metric.csv")
@@ -428,6 +429,7 @@ class RecommenderSystem:
         return recommendations
     
     def recommend(self, customer_id: str) -> List[int]:
+        print(self.recommendations)
         if customer_id in self.recommendations:
             return self.recommendations[customer_id]
         else:
@@ -442,8 +444,7 @@ class RecommenderSystem:
         return item_details
 
     def get_user_purchased(self, customer_id: str) -> list:
-        actual_purchases = self.train.groupby('customer_id')['article_id'].agg(list)
-        return actual_purchases[customer_id] if customer_id in actual_purchases else []
+        return self.actual_purchases[customer_id] if customer_id in self.actual_purchases else []
 
     def get_items_by_ids(self, item_ids: list) -> List[dict]:
         items = []
