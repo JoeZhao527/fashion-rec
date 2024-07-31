@@ -450,7 +450,7 @@ def parse_arguments():
                         help='Path to the test CSV file')
     parser.add_argument('--img_cluster_path', type=str, default='./resources/img_cluster_2000.csv',
                         help='Path to the image cluster CSV file')
-    parser.add_argument('--dev_mode', type=bool, default=True,
+    parser.add_argument('--dev_mode', type=bool, default=False,
                         help='Enable or disable development mode')
     parser.add_argument('--cache_dir', type=str, default='./cache/fold_0',
                         help='Directory for cache')
