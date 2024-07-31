@@ -24,7 +24,8 @@ swaggerui_blueprint = get_swaggerui_blueprint(
 )
 app.register_blueprint(swaggerui_blueprint, url_prefix=SWAGGER_URL)
 
-path = r'C:/Users/Administrator/Desktop/h-and-m-personalized-fashion-recommendations'
+# path = r'C:/Users/Administrator/Desktop/h-and-m-personalized-fashion-recommendations'
+path = "."
 recommender_system = RecommenderSystem(
     article_path= path + "/dataset/articles.csv",
     customer_path= path + "/dataset/customers.csv",

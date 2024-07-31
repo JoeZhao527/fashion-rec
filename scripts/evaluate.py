@@ -10,8 +10,6 @@ import numpy as np
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from src.system import RecommenderSystem
-from src.utils.load_cfg import ConfigLoader
-from src.const import RecallerKey
 
 
 def log(msg):
@@ -82,85 +80,4 @@ if __name__ == "__main__":
         train = data["train"]
         test = data["test"]
 
-        cfg_loader = ConfigLoader("./configs")
-        feat_keys = cfg_loader.get_feature("baseline")
-        ranker = cfg_loader.get_ranker("xgboost")
-
         log(f"Initializing recommender system for fold {fold}")
-        rs = RecommenderSystem(
-            train_data=train,
-            user_data=customers,
-            item_data=articles,
-            image_feat_path="./output",
-            cache_dir=f"./cache/fold_{fold}",
-            # item_stat_feat_path=f"./cache/fold_{fold}/feature/stat",
-            # user_stat_feat_path=f"./cache/fold_{fold}/feature/user_stat",
-            # ranking_train_cache=f"./cache/fold_{fold}/train.csv",
-            cate_feat_keys=feat_keys["cate_feat_keys"],
-            num_feat_keys=feat_keys["num_feat_keys"],
-            obj_feat_keys=[],
-            recall_cfg=[(RecallerKey.POP, 500)],
-            ranker_cfg=[(ranker["model_name"], ranker["params"])]
-        )
-
-        log(f"Initializing feature for fold {fold}")
-        rs.init_feature()
-
-        log(f"Training ranking models for fold {fold}")
-        rs.init_ranking()
-
-        log(f"Evaluating for fold {fold}")
-        test_users = set(test['customer_id']).intersection(set(rs.users))
-
-        ranking_input = []
-        log(f"Start recalling for fold {fold}")
-        for user in tqdm(list(test_users), desc="Recalling"):
-            recalled = rs.recall(user)
-            pairs = pd.DataFrame({"article_id": list(recalled.keys())})
-            pairs["customer_id"] = user
-
-            ranking_input.append(pairs)
-
-        log(f"Start ranking for fold {fold}")
-        ranking_input = pd.concat(ranking_input).reset_index(drop=True)
-        ranked = rs.batch_ranking(ranking_input)
-
-        log(f"Start evaluating for fold {fold}")
-        top_n = 12
-        rank_precision = []
-        for i, (customer_id, group) in enumerate(ranked.groupby("customer_id")):
-            _ranked = group.sort_values("xgboost_y_pred_prob").reset_index()
-            purchased = test[test['customer_id'] == user]['article_id']
-
-            # rank_precision.append(
-            #     len(set(purchased).intersection(set(_ranked[:top_n]['article_id']))) / top_n
-            # )
-            rank_precision.append(calculate_map_at_n(list(_ranked[:top_n]['article_id']), list(purchased)))
-
-            if i != 0 and i % 1000 == 0:
-                log(f"MAP for {i} users: {np.array(rank_precision).mean():.5f}")
-
-        # log(f"Start evaluating for fold {fold}")
-        # top_n = 12
-        # rank_precision = []
-
-        # # Group the ranked dataframe by customer_id
-        # ranked_grouped = ranked.groupby("customer_id")
-
-        # # Define a function to compute precision for a single customer
-        # def compute_precision(customer_id):
-        #     group = ranked_grouped.get_group(customer_id)
-        #     _ranked = group.sort_values("xgboost_y_pred_prob").reset_index()
-        #     purchased = set(test[test['customer_id'] == customer_id]['article_id'])
-        #     top_ranked = set(_ranked[:top_n]['article_id'])
-        #     precision = len(purchased.intersection(top_ranked)) / top_n
-        #     return precision
-        
-        # # Use ThreadPoolExecutor to parallelize the computation
-        # with ThreadPoolExecutor(max_workers=20) as executor:
-        #     futures = {executor.submit(compute_precision, customer_id): customer_id for customer_id in ranked_grouped.groups.keys()}
-            
-        #     for future in tqdm(as_completed(futures), total=len(futures), desc="Evaluating"):
-        #         rank_precision.append(future.result())
-
-        log(f"Precision: {np.array(rank_precision).mean():.5f}")    
