@@ -43,6 +43,8 @@ class ContentBased:
         for cluster, group in tqdm(item_cluster.groupby("cluster"), desc=f"{media} cluster construct"):
             cluster_to_item[cluster] = pd.merge(group, purchase_count, how='left').sort_values("count", ascending=False)
         
+        item_feature = pd.DataFrame(np.load(store_path, allow_pickle=True).item().items(), columns=['article_id', 'feature'])
+        item_cluster = pd.merge(item_cluster, item_feature, on=['article_id'])
         item_cluster_trn = pd.merge(train, item_cluster, on=['article_id'])
         recent_purchased = item_cluster_trn.groupby("customer_id")
 
@@ -54,7 +56,7 @@ class ContentBased:
 
         item_select_prod = pd.merge(
             pd.DataFrame(item_in_cluster, columns=["customer_id", "cluster"]),
-            item_cluster[['article_id', 'cluster']],
+            item_cluster[['article_id', 'cluster', 'feature']],
             on='cluster',
         )
 
@@ -70,7 +72,6 @@ class ContentBased:
         # else:
         #     raise Exception(f"Unexpected media: {media}")
         
-        self.item_feature = np.load(store_path, allow_pickle=True).item()
         self.item_cluster = item_cluster
         self.item_select_prod = item_select_prod
         self.purchase_count = purchase_count
@@ -110,16 +111,12 @@ class ContentBased:
 
     def cluster_content_similarity(self):
         recommendations = {}
-        for cid, group in tqdm(self.item_select_prod.groupby("customer_id"), desc=""):
+        for cid, group in tqdm(self.item_select_prod.groupby("customer_id"), desc=f"{self.media} cluster sim sorting"):
             candidates = group['article_id']
-            purchased = self.recent_purchased.get_group(cid)['article_id']
-
-            # Step 1: Get feature vectors for each article in candidates and purchased
-            candidate_vectors = self.get_vectors(candidates)
-            purchased_vectors = self.get_vectors(purchased)
+            purchased_vector = np.stack(self.recent_purchased.get_group(cid)['feature'])
 
             # Step 2: Compute pairwise similarity (dot product) of all candidates and purchased items
-            similarity_matrix = np.dot(candidate_vectors, purchased_vectors.T)
+            similarity_matrix = np.dot(np.stack(group['feature']), purchased_vector.T)
 
             # Step 3: Aggregate the similarity score by sum. Each candidate article will have an aggregated score
             aggregated_scores = similarity_matrix.sum(axis=1)
