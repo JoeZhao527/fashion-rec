@@ -167,3 +167,4 @@ cache/
 feature/dino_img_emb
 
 *.ipynb
+*.npy
