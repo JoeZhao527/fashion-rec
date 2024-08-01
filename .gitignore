@@ -164,7 +164,7 @@ cython_debug/
 static/images/
 dataset/
 cache/
-feature/dino_img_emb
+feature/
 
 *.ipynb
 *.npy
