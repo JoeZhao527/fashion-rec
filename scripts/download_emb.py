@@ -33,15 +33,17 @@ if __name__ == "__main__":
         os.makedirs(feat_dir)
 
     f_name = 'dino_image_emb.npy'
+    print(f"Downlaoding {f_name}...")
     download_file_from_google_drive(
         'dino_image_emb.npy', os.path.join(feat_dir, f_name),
-        url="https://drive.google.com/file/d/1BACmF4PBhy-RmgSsj0GgZjJgcPZUXfND/view?usp=sharing"
+        url="https://drive.usercontent.google.com/download?confirm=xxx&id=1BACmF4PBhy-RmgSsj0GgZjJgcPZUXfND"
     )
 
     f_name = 'glove_text_emb.npy'
+    print(f"Downlaoding {f_name}...")
     download_file_from_google_drive(
         'glove_text_emb.npy', os.path.join(feat_dir, f_name),
-        url="https://drive.google.com/file/d/1-w1A5_wPs1ROu5gRXtqylPtmFG2eXDpX/view?usp=sharing"
+        url="https://drive.usercontent.google.com/download?confirm=xxx&id=1-w1A5_wPs1ROu5gRXtqylPtmFG2eXDpX"
     )
-    
+
     print(f"File downloaded to {feat_dir}")
