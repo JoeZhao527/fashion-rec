@@ -19,6 +19,7 @@ from typing import Dict
 from sklearn.preprocessing import normalize
 import faiss
 from datetime import timedelta
+import torch
 
 from scipy.sparse import coo_matrix
 import implicit
@@ -109,34 +110,83 @@ class ContentBased:
         return np.stack(res)
 
     def cluster_content_similarity(self):
-        recommendations = {}
-        for cid, group in self.item_select_prod.groupby("customer_id"):
-            candidates = group['article_id']
-            purchased = self.recent_purchased.get_group(cid)['article_id']
+        if not torch.cuda.is_available():
+            recommendations = {}
+            for cid, group in tqdm(self.item_select_prod.groupby("customer_id"), desc=f"{self.media} similarity computation"):
+                candidates = group['article_id']
+                purchased = self.recent_purchased.get_group(cid)['article_id']
 
-            # Step 1: Get feature vectors for each article in candidates and purchased
-            try:
+                # Step 1: Get feature vectors for each article in candidates and purchased
                 candidate_vectors = self.get_vectors(candidates)
                 purchased_vectors = self.get_vectors(purchased)
-            except:
-                print()
-                print(len(candidates))
-                print()
-                raise
 
-            # Step 2: Compute pairwise similarity (dot product) of all candidates and purchased items
-            similarity_matrix = np.dot(candidate_vectors, purchased_vectors.T)
+                # Step 2: Compute pairwise similarity (dot product) of all candidates and purchased items
+                similarity_matrix = np.dot(candidate_vectors, purchased_vectors.T)
 
-            # Step 3: Aggregate the similarity score by sum. Each candidate article will have an aggregated score
-            aggregated_scores = similarity_matrix.sum(axis=1)
+                # Step 3: Aggregate the similarity score by sum. Each candidate article will have an aggregated score
+                aggregated_scores = similarity_matrix.sum(axis=1)
 
-            # Step 4: Sort the candidates according to the aggregated score
-            candidate_scores = pd.DataFrame({
-                'article_id': candidates,
-                'score': aggregated_scores
-            }).sort_values(by='score', ascending=False)
+                # Step 4: Sort the candidates according to the aggregated score
+                candidate_scores = pd.DataFrame({
+                    'article_id': candidates,
+                    'score': aggregated_scores
+                }).sort_values(by='score', ascending=False)
 
-            recommendations[cid] = candidate_scores
+                recommendations[cid] = candidate_scores
+        else:
+            recommendations = {}
+            all_candidates = []
+            all_purchased = []
+            customer_ids = []
+
+            # Collect all candidate and purchased vectors
+            for cid, group in tqdm(self.item_select_prod.groupby("customer_id"), desc=f"{self.media} collecting data"):
+                candidates = group['article_id'].values
+                purchased = self.recent_purchased.get_group(cid)['article_id'].values
+
+                candidate_vectors = self.get_vectors(candidates).astype('float32')
+                purchased_vectors = self.get_vectors(purchased).astype('float32')
+
+                all_candidates.append(candidate_vectors)
+                all_purchased.append(purchased_vectors)
+                customer_ids.append(cid)
+
+            # Flatten the lists
+            all_candidates = np.vstack(all_candidates)
+            all_purchased = np.vstack(all_purchased)
+
+            # Normalize the vectors
+            faiss.normalize_L2(all_candidates)
+            faiss.normalize_L2(all_purchased)
+
+            # Build the Faiss index
+            res = faiss.StandardGpuResources()
+            index = faiss.IndexFlatIP(all_candidates.shape[1])  # Using Inner Product for cosine similarity
+            index = faiss.index_cpu_to_gpu(res, 0, index)
+            index.add(all_purchased)  # Add all purchased vectors to the index
+
+            # Search for the nearest neighbors for all candidate vectors
+            k = all_purchased.shape[0]  # Number of neighbors
+            distances, indices = index.search(all_candidates, k)
+
+            # Aggregate results per customer
+            start_idx = 0
+            for cid in tqdm(customer_ids, desc="Processing results"):
+                num_candidates = len(self.item_select_prod[self.item_select_prod['customer_id'] == cid])
+                candidate_indices = indices[start_idx:start_idx + num_candidates]
+                candidate_scores = distances[start_idx:start_idx + num_candidates]
+                start_idx += num_candidates
+
+                # Aggregate scores by summing the similarities
+                aggregated_scores = candidate_scores.sum(axis=1)
+
+                candidate_articles = self.item_select_prod[self.item_select_prod['customer_id'] == cid]['article_id'].values
+                candidate_scores_df = pd.DataFrame({
+                    'article_id': candidate_articles,
+                    'score': aggregated_scores
+                }).sort_values(by='score', ascending=False)
+
+                recommendations[cid] = candidate_scores_df
 
         return recommendations
     
