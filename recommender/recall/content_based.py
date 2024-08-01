@@ -11,7 +11,6 @@ from collections import Counter
 from matplotlib import pyplot as plt
 import seaborn as sns
 
-import random
 import gensim
 assert gensim.models.word2vec.FAST_VERSION > -1
 

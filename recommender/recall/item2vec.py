@@ -212,6 +212,7 @@ class Item2VecModel:
         for _, row in tqdm(positive_samples.iterrows(), total=len(positive_samples), desc="item2vec data prepare"):
             training_data.append(row['article_id'])
 
+        random.seed(42)
         for purchase in training_data:
             random.shuffle(purchase)
             
