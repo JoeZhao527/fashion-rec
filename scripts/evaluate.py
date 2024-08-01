@@ -9,7 +9,7 @@ from tqdm import tqdm
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from src.system import RecommenderSystem
+from recommender.recommender import RecommenderSystem
 
 
 def log(msg):

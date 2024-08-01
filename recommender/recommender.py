@@ -21,14 +21,17 @@ from sklearn.metrics import accuracy_score, roc_auc_score
 from xgboost import XGBClassifier
 import argparse
 
+from recommender.utils.general import log, log_configuaration
+
 from recommender.recall import (
+    ContentBased,
     Item2VecModel,
     popularity_recall,
     postal_code_recall,
     product_code_recall,
-    image_cluster_recall,
     bought_together_recall,
-    user_collaborative_recall
+    user_collaborative_recall,
+    age_group_recall
 )
 
 from recommender.utils.evaluate import (
@@ -39,7 +42,8 @@ from recommender.utils.evaluate import (
 from recommender.utils.data import (
     filter_data,
     split_last_week_data,
-    recall_select
+    recall_select,
+    cold_start_agg
 )
 
 def get_image_path(item_id):
@@ -47,7 +51,7 @@ def get_image_path(item_id):
     folder_number = '0' + item_id_str[:2]  # Ensure this logic matches your folder structure
     item_id_str = '0' + item_id_str
     image_url = f'http://localhost:5000/images/{folder_number}/{item_id_str}.jpg'
-    # print(image_url)
+    # log(image_url)
     return image_url
 
 class RecommenderSystem:
@@ -57,9 +61,12 @@ class RecommenderSystem:
         customer_path: str,
         train_path: str,
         test_path: str,
-        img_cluster_path: str,
+        image_cluster_path: str,
+        image_feature_path: str,
+        text_cluster_path: str,
+        text_feature_path: str,
         cache_dir: str,
-        dev_mode: bool = False,
+        production_mode: bool = False,
         recall_top_n: int = 100,
         rank_top_n: int = 12,
         rank_neg_sample: int = 5,
@@ -68,9 +75,30 @@ class RecommenderSystem:
         ] = ['postal', 'product', 'pop', 'user_cf', 'img', 'also_buy', 'item2vec_sim', 'item2vec_cls'],
         recall_select: bool = True,
         recall_overwrite_cache: bool = False,
-        rank_overwrite_cache: bool = True
+        rank_overwrite_cache: bool = True,
+        
     ):
-        self.dev_mode = dev_mode
+        log_configuaration(
+            article_path=article_path,
+            customer_path=customer_path,
+            train_path=train_path,
+            test_path=test_path,
+            image_cluster_path=image_cluster_path,
+            image_feature_path=image_feature_path,
+            text_cluster_path=text_cluster_path,
+            text_feature_path=text_feature_path,
+            cache_dir=cache_dir,
+            production_mode=production_mode,
+            recall_top_n=recall_top_n,
+            rank_top_n=rank_top_n,
+            rank_neg_sample=rank_neg_sample,
+            recall_pipeline=recall_pipeline,
+            recall_select=recall_select,
+            recall_overwrite_cache=recall_overwrite_cache,
+            rank_overwrite_cache=rank_overwrite_cache
+        )
+
+        self.production_mode = production_mode
         self.recall_top_n = recall_top_n
         self.rank_neg_sample = rank_neg_sample
         self.rank_top_n = rank_top_n
@@ -79,35 +107,39 @@ class RecommenderSystem:
         self.recall_overwrite_cache = recall_overwrite_cache
         self.rank_overwrite_cache = rank_overwrite_cache
 
+        self.image_feature_path = image_feature_path
+        self.text_feature_path = text_feature_path
+
         os.makedirs(cache_dir, exist_ok=True)
         self.recall_cache_dir = os.path.join(cache_dir, "recall")
         self.ranking_cache_dir = os.path.join(cache_dir, "ranking")
 
-        print(f"Loading data...")
-        self.img_cluster = pd.read_csv(img_cluster_path)
+        log(f"Loading data...")
+        self.img_cluster = pd.read_csv(image_cluster_path)
+        self.txt_cluster = pd.read_csv(text_cluster_path)
 
         self.articles = pd.read_csv(article_path)
         self.customers = pd.read_csv(customer_path)
 
-        print(f"Initializing data...")
+        log(f"Initializing data...")
         self._init_data(train_path, test_path)
 
-        print(f"Recalling...")
+        log(f"Recalling...")
         recall_res, rank_train, rank_test = self._recall()
 
         self.recall_res = recall_res
         self.rank_train = rank_train
         self.rank_test = rank_test
 
-        print(f"Ranking...")
+        log(f"Ranking...")
         self.recommendations = self._ranking().groupby('customer_id')['article_id'].agg(list)
 
     def _init_data(self, train_path, test_path):
         train = pd.read_csv(train_path)
         test = pd.read_csv(test_path)
 
-        # In in development mode, only select a small portion of users
-        if self.dev_mode:
+        # If not running for production, only select a small portion of users
+        if not self.production_mode:
             train, test = filter_data(train, test)
 
         rank_label, _ = split_last_week_data(train)
@@ -126,16 +158,40 @@ class RecommenderSystem:
         metrics_res_path = os.path.join(self.recall_cache_dir, "metric.csv")
         rank_train_path = os.path.join(self.recall_cache_dir, "rank_train.csv")
         rank_test_path = os.path.join(self.recall_cache_dir, "rank_test.csv")
+        age_agg_path = os.path.join(self.recall_cache_dir, "age_group.csv")
+        postal_agg_path = os.path.join(self.recall_cache_dir, "postal_code.csv")
 
         # If cache exists, use cache
         if os.path.exists(self.recall_cache_dir) and not self.recall_overwrite_cache:
             res = pd.read_csv(metrics_res_path)
             rak_recall_df = pd.read_csv(rank_train_path)
             tst_recall_df = pd.read_csv(rank_test_path)
+            age_group_agg = pd.read_csv(age_agg_path)
+            postal_code_agg = pd.read_csv(postal_agg_path)
         else:
             top_n = self.recall_top_n
 
             purchase_count = popularity_recall(train=self.train)
+
+            image_cb = ContentBased(
+                train=self.train,
+                item_cluster=self.img_cluster,
+                purchase_count=purchase_count,
+                store_path=self.image_feature_path,
+                media="image"
+            )
+            image_cluster_pop_res = image_cb.cluster_popularity()
+            image_cluster_sim_res = image_cb.cluster_content_similarity()
+
+            text_cb = ContentBased(
+                train=self.train,
+                item_cluster=self.txt_cluster,
+                purchase_count=purchase_count,
+                store_path=self.text_feature_path,
+                media="text"
+            )
+            text_cluster_pop_res = text_cb.cluster_popularity()
+            text_cluster_sim_res = text_cb.cluster_content_similarity()
 
             item2vec = Item2VecModel(
                 train=self.train,
@@ -152,18 +208,18 @@ class RecommenderSystem:
                 purchase_count=purchase_count
             )
 
+            age_group_res, customers_age_group_map = age_group_recall(
+                train=self.train,
+                customers=self.customers,
+                purchase_count=purchase_count
+            )
+
             product_code_res = product_code_recall(
                 train=self.train,
                 articles=self.articles,
                 purchase_count=purchase_count
             )
-
-            image_cluster_res = image_cluster_recall(
-                train=self.train,
-                img_group=self.img_cluster,
-                purchase_count=purchase_count
-            )
-
+            
             bought_together_res = bought_together_recall(train=self.train)
 
             user_cf_res = user_collaborative_recall(
@@ -171,9 +227,18 @@ class RecommenderSystem:
                 top_N=top_n
             )
 
+            # Aggregate postal code and age information for user cold start
+            postal_code_agg = cold_start_agg(postal_code_res)
+            age_group_agg = cold_start_agg(age_group_res)
+
             metrics = {
                 k: {"purchased": [], "hit_num": [], "precision": [], "recall": [], "recall_num": [], "map": []}
-                for k in ['postal', 'product', 'pop', 'user_cf', 'img', 'also_buy', 'item2vec_sim', 'item2vec_cls', 'together']
+                for k in [
+                    'postal', 'product', 'pop', 'also_buy', 'age', 'user_cf',
+                    'item2vec_sim', 'item2vec_cls',
+                    'img_cb_pop', 'img_cb_sim', 'txt_cb_pop', 'txt_cb_sim',
+                    'together'
+                ]
             }
             rank_label_recall = []
             test_recall = []
@@ -218,23 +283,27 @@ class RecommenderSystem:
 
             skip_users = []
             skip_recall = []
-            for cid in tqdm(test_users):
-                # purchased = set(test[test['customer_id'] == cid]['article_id'])
+            for cid in tqdm(test_users, desc="Aggregrating recall results"):
                 purchased = purchase_dict[cid]
 
                 # get user postcode
                 postal_code = customers_postal_code_map[cid]
+                age_group = customers_age_group_map[cid]
 
                 try:
                     _res = {
                         "also_buy": list(bought_together_res[cid][:top_n]['article_id']),
-                        "img": list(image_cluster_res[cid][:top_n]['article_id']),
+                        "img_cb_pop": list(image_cluster_pop_res[cid][:top_n]['article_id']),
+                        "txt_cb_pop": list(text_cluster_pop_res[cid][:top_n]['article_id']),
+                        "img_cb_sim": list(image_cluster_sim_res[cid][:top_n]['article_id']),
+                        "txt_cb_sim": list(text_cluster_sim_res[cid][:top_n]['article_id']),
                         "product": list(product_code_res[cid][:top_n]['article_id']),
                         "pop": list(purchase_count[:top_n]['article_id']),
                         "user_cf": list(user_cf_res[cid][:top_n]),
                         "item2vec_sim": list(item2vec_sim_res[cid][:top_n]),
                         "item2vec_cls": list(item2vec_cls_res[cid][:top_n]),
-                        "postal": list(postal_code_res[postal_code][:top_n]['article_id'])
+                        "postal": list(postal_code_res[postal_code][:top_n]['article_id']),
+                        "age": list(age_group_res[age_group][:top_n]['article_id'])
                     }
                 except:
                     skip_users.append(cid)
@@ -271,17 +340,20 @@ class RecommenderSystem:
             res['recall_num'] = res['recall_num'].apply(int)
             res['purchased'] = res['purchased'].apply(lambda x: round(x, 2))
 
-            print("Preparing recall for training")
+            log("Preparing recall for training")
             rak_recall_df = pd.DataFrame(rank_label_recall)
 
-            print("Preparing recall for testing")
+            log("Preparing recall for testing")
             tst_recall_df = pd.DataFrame(test_recall)
 
             os.makedirs(self.recall_cache_dir, exist_ok=True)
             res.to_csv(metrics_res_path, index=False)
             rak_recall_df.to_csv(rank_train_path, index=False)
             tst_recall_df.to_csv(rank_test_path, index=False)
+            postal_code_agg.to_csv(postal_agg_path, index=False)
+            age_group_agg.to_csv(age_agg_path, index=False)
 
+            log(f"Recall results:")
             print(res)
 
         if self.recall_select:
@@ -324,14 +396,15 @@ class RecommenderSystem:
         res['purchased'] = res['purchased'].apply(lambda x: round(x, 2))
 
         self.selected_recall_performance = res
-        print(f"selected recall performance for {len(tst_recall_records)} users:")
-        print(self.selected_recall_performance)
+        log(f"selected recall performance for {len(tst_recall_records)} users:")
+        log(self.selected_recall_performance)
 
-        print(len(pd.concat(tst_recall_records.values())))
+        log(len(pd.concat(tst_recall_records.values())))
         return pd.concat(rak_recall_records.values()), pd.concat(tst_recall_records.values())
     
     def _ranking(self):
         recommendation_path = os.path.join(self.ranking_cache_dir, "rank.csv")
+        feature_importance_path = os.path.join(self.ranking_cache_dir, "feat_importance.csv")
 
         if os.path.exists(self.ranking_cache_dir) and not self.rank_overwrite_cache:
             all_pred_prob = pd.read_csv(recommendation_path)
@@ -355,30 +428,43 @@ class RecommenderSystem:
             # Apply the sampling function to each customer group
             rank_train = self.rank_train.groupby('customer_id').apply(lambda group: sample_group(group, desired_ratio)).reset_index(drop=True)
 
-            # Split the data into train and test sets
-            train_data, test_data = train_test_split(rank_train, test_size=0.2, random_state=42, stratify=rank_train['purchased'])
+            # # Split the data into train and test sets
+            # train_data, test_data = train_test_split(rank_train, test_size=0.2, random_state=42, stratify=rank_train['purchased'])
 
-            # Define features and target
-            X = train_data.drop(columns=['customer_id', 'article_id', 'purchased'])
-            y = train_data['purchased']
+            # # Define features and target
+            # X = train_data.drop(columns=['customer_id', 'article_id', 'purchased'])
+            # y = train_data['purchased']
 
-            pred_X = test_data.drop(columns=['customer_id', 'article_id', 'purchased'])
-            pred_y = test_data['purchased']
+            # pred_X = test_data.drop(columns=['customer_id', 'article_id', 'purchased'])
+            # pred_y = test_data['purchased']
 
-            # Train XGBoost model
+            # # Train XGBoost model
+            # model = XGBClassifier(n_estimators=20, max_depth=10, learning_rate=0.5, objective='binary:logistic', enable_categorical=True)
+            # model.fit(X, y)
+
+            # # Predict and evaluate
+            # y_pred = model.predict(pred_X)
+            # y_pred_proba = model.predict_proba(pred_X)[:, 1]
+
+            # accuracy = accuracy_score(pred_y, y_pred)
+            # roc_auc = roc_auc_score(pred_y, y_pred_proba)
+
+            X = rank_train.drop(columns=['customer_id', 'article_id', 'purchased'])
+            y = rank_train['purchased']
+
             model = XGBClassifier(n_estimators=20, max_depth=10, learning_rate=0.5, objective='binary:logistic', enable_categorical=True)
             model.fit(X, y)
 
             # Predict and evaluate
-            y_pred = model.predict(pred_X)
-            y_pred_proba = model.predict_proba(pred_X)[:, 1]
+            y_pred = model.predict(X)
+            y_pred_proba = model.predict_proba(X)[:, 1]
 
-            accuracy = accuracy_score(pred_y, y_pred)
-            roc_auc = roc_auc_score(pred_y, y_pred_proba)
+            accuracy = accuracy_score(y, y_pred)
+            roc_auc = roc_auc_score(y, y_pred_proba)
 
-            # Print average scores
-            print(f'Accuracy: {accuracy}')
-            print(f'ROC AUC: {roc_auc}')
+            # log average scores
+            log(f'Test Accuracy: {accuracy}')
+            log(f'Test ROC AUC: {roc_auc}')
             
             self.model = model
 
@@ -395,21 +481,29 @@ class RecommenderSystem:
             # Reset index of all_test_preds
             all_pred_prob.reset_index(drop=True, inplace=True)
 
+            # Rank according to model prediction score
             all_pred_prob.sort_values(by=['customer_id', 'predicted_proba'], ascending=[True, False], inplace=True)
 
+            # Compute feature importance for interpretations
+            feature_importance = model.get_booster().get_score(importance_type='weight')
+            importance_df = pd.DataFrame(feature_importance.items(), columns=['Feature', 'Importance'])
+            importance_df = importance_df.sort_values(by='Importance', ascending=False)
+
+            # Save model prediction and feature importance
             os.makedirs(self.ranking_cache_dir, exist_ok=True)
             all_pred_prob.to_csv(recommendation_path, index=False)
-
+            importance_df.to_csv(feature_importance_path, index=False)
+            
         recommendations = all_pred_prob.groupby('customer_id').head(self.rank_top_n).reset_index(drop=True)
 
         purchase_dict = self.test.groupby('customer_id')['article_id'].agg(list)
         map_at_12 = rank_calculate_mapk(purchase_dict, recommendations, self.rank_top_n)
-        print(f"MAP@12 for {len(purchase_dict)} users: {map_at_12}")
+        log(f"MAP@12 for {len(recommendations['customer_id'].unique())} users: {map_at_12}")
 
         return recommendations
     
     def recommend(self, customer_id: str) -> List[int]:
-        print(self.recommendations)
+        log(self.recommendations)
         if customer_id in self.recommendations:
             return self.recommendations[customer_id]
         else:
@@ -448,18 +542,24 @@ def parse_arguments():
                         help='Path to the train CSV file')
     parser.add_argument('--test_path', type=str, default='./dataset/split/fold_0/test.csv',
                         help='Path to the test CSV file')
-    parser.add_argument('--img_cluster_path', type=str, default='./resources/img_cluster_2000.csv',
+    parser.add_argument('--image_cluster_path', type=str, default='./resources/img_cluster_2000.csv',
                         help='Path to the image cluster CSV file')
-    parser.add_argument('--dev_mode', type=bool, default=False,
-                        help='Enable or disable development mode')
+    parser.add_argument('--image_feature_path', type=str, default='./feature/dino_image_emb.npy',
+                        help='Path to the image feature directory')
+    parser.add_argument('--text_cluster_path', type=str, default='./resources/text_cluster_2000.csv',
+                        help='Path to the text cluster CSV file')
+    parser.add_argument('--text_feature_path', type=str, default='./feature/glove_text_emb.npy',
+                        help='Path to the text embedding npy')
     parser.add_argument('--cache_dir', type=str, default='./cache/fold_0',
                         help='Directory for cache')
-    parser.add_argument('--recall_overwrite_cache', type=bool, default=False,
-                        help='Enable or disable overwriting the cache for recall')
-    parser.add_argument('--rank_overwrite_cache', type=bool, default=False,
-                        help='Enable or disable overwriting the cache for rank')
-    parser.add_argument('--recall_select', type=bool, default=False,
-                        help='Enable or disable selecting certain recall pipeline selection after recall')
+    parser.add_argument('--production_mode', action='store_true',
+                        help='Enable production mode')
+    parser.add_argument('--rank_overwrite_cache', action='store_true', dest='rank_overwrite_cache',
+                        help='Enable overwriting the cache for rank')
+    parser.add_argument('--recall_overwrite_cache', action='store_true', dest='recall_overwrite_cache',
+                        help='Enable overwriting the cache for recall')
+    parser.add_argument('--recall_select', action='store_true',
+                        help='Enable selecting certain recall pipeline selection after recall')
 
     return parser.parse_args()
 
@@ -471,10 +571,13 @@ if __name__ == '__main__':
         customer_path=args.customer_path,
         train_path=args.train_path,
         test_path=args.test_path,
-        img_cluster_path=args.img_cluster_path,
-        dev_mode=args.dev_mode,
+        image_cluster_path=args.image_cluster_path,
+        image_feature_path=args.image_feature_path,
+        text_cluster_path=args.text_cluster_path,
+        text_feature_path=args.text_feature_path,
+        production_mode=args.production_mode,
         cache_dir=args.cache_dir,
         recall_overwrite_cache=args.recall_overwrite_cache,
-        rank_overwrite_cache=args.recall_overwrite_cache,
+        rank_overwrite_cache=args.rank_overwrite_cache,
         recall_select=args.recall_select
     )

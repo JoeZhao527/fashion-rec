@@ -66,24 +66,17 @@ def recall_select(trn, target_cols: List[int]):
 
     return new_dataframes
 
-# def recall_select(recall_df):
-#     # Step 1: Identify columns that do not contain 'id' or 'score' and have binary values
-#     binary_columns = [
-#         col for col in recall_df.columns
-#         if 'id' not in col and 'score' not in col and 'purchased' not in col
-#     ]
-    
-#     # Create a dictionary to store the new dataframes
-#     new_dataframes = {cid: {} for cid in recall_df['customer_id'].unique()}
+def cold_start_agg(user_groups):
+    dataframes = []
 
-#     for col in binary_columns:
-#         # Step 2: Create a new dataframe for each selected column where col == 1
-#         new_df = recall_df[recall_df[col] == 1][[col, f"{col}_score", "purchased", "customer_id", "article_id"]]
-        
-#         new_df = new_df.sort_values(f"{col}_score", ascending=False)
+    # Iterate through the dictionary
+    for group, df in user_groups.items():
+        # Add the 'group' column to the DataFrame
+        df['group'] = group
+        # Drop duplicates based on 'article_id'
+        df = df.drop_duplicates(subset=['article_id'])
+        # Append the DataFrame to the list
+        dataframes.append(df)
 
-#         # Store the new dataframe in the dictionary
-#         for cid, _df in new_df.groupby("customer_id"):
-#             new_dataframes[cid][col] = _df.reset_index(drop=True)
-    
-#     return new_dataframes
+    # Concatenate all DataFrames in the list into a single DataFrame
+    return pd.concat(dataframes, ignore_index=True)
