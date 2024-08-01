@@ -85,22 +85,6 @@ class ContentBased:
 
         return item_sorted_prod_res
     
-    # def _get_image_vector(self, article_id: int) -> np.ndarray:
-    #     # Assumet this is done
-    #     pass
-
-    # def _get_text_vector(self, article_id: int) -> np.ndarray:
-    #     # Assumet this is done
-    #     pass
-
-    # def get_vector(self, article_id: int) -> np.ndarray:
-    #     if self.media == "image":
-    #         return self._get_image_vector(article_id)
-    #     elif self.media == "text":
-    #         return self._get_image_vector(article_id)
-    #     else:
-    #         raise Exception(f"Unexpected media: {self.media}")
-
     def get_vectors(self, article_id_list: List[int]):
         res = []
         for aid in article_id_list:
@@ -110,8 +94,6 @@ class ContentBased:
         return np.array(res)
 
     def cluster_content_similarity(self):
-        len(self.item_select_prod)
-
         recommendations = {}
         for cid, group in tqdm(self.item_select_prod.groupby("customer_id"), desc=f"{self.media} cluster sim sorting"):
             candidates = group['article_id']
