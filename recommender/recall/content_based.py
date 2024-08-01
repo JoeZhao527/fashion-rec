@@ -110,6 +110,8 @@ class ContentBased:
         return np.array(res)
 
     def cluster_content_similarity(self):
+        len(self.item_select_prod)
+
         recommendations = {}
         for cid, group in tqdm(self.item_select_prod.groupby("customer_id"), desc=f"{self.media} cluster sim sorting"):
             candidates = group['article_id']
@@ -122,12 +124,12 @@ class ContentBased:
             aggregated_scores = similarity_matrix.sum(axis=1)
 
             # Step 4: Sort the candidates according to the aggregated score
-            # candidate_scores = pd.DataFrame({
-            #     'article_id': candidates,
-            #     'score': aggregated_scores
-            # }).sort_values(by='score', ascending=False)
+            candidate_scores = pd.DataFrame({
+                'article_id': candidates,
+                'score': aggregated_scores
+            }).sort_values(by='score', ascending=False)
 
-            # recommendations[cid] = candidate_scores
+            recommendations[cid] = candidate_scores
 
         return recommendations
     
