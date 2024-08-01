@@ -122,12 +122,12 @@ class ContentBased:
             aggregated_scores = similarity_matrix.sum(axis=1)
 
             # Step 4: Sort the candidates according to the aggregated score
-            candidate_scores = pd.DataFrame({
-                'article_id': candidates,
-                'score': aggregated_scores
-            }).sort_values(by='score', ascending=False)
+            # candidate_scores = pd.DataFrame({
+            #     'article_id': candidates,
+            #     'score': aggregated_scores
+            # }).sort_values(by='score', ascending=False)
 
-            recommendations[cid] = candidate_scores
+            # recommendations[cid] = candidate_scores
 
         return recommendations
     
