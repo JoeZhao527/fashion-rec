@@ -181,7 +181,7 @@ class RecommenderSystem:
                 media="image"
             )
             image_cluster_pop_res = image_cb.cluster_popularity()
-            image_cluster_sim_res = image_cb.cluster_content_similarity()
+            # image_cluster_sim_res = image_cb.cluster_content_similarity()
 
             text_cb = ContentBased(
                 train=self.train,
@@ -191,7 +191,7 @@ class RecommenderSystem:
                 media="text"
             )
             text_cluster_pop_res = text_cb.cluster_popularity()
-            text_cluster_sim_res = text_cb.cluster_content_similarity()
+            # text_cluster_sim_res = text_cb.cluster_content_similarity()
 
             item2vec = Item2VecModel(
                 train=self.train,
@@ -236,7 +236,7 @@ class RecommenderSystem:
                 for k in [
                     'postal', 'product', 'pop', 'also_buy', 'age', 'user_cf',
                     'item2vec_sim', 'item2vec_cls',
-                    'img_cb_pop', 'img_cb_sim', 'txt_cb_pop', 'txt_cb_sim',
+                    'img_cb_pop', 'txt_cb_pop',
                     'together'
                 ]
             }
@@ -295,8 +295,6 @@ class RecommenderSystem:
                         "also_buy": list(bought_together_res[cid][:top_n]['article_id']),
                         "img_cb_pop": list(image_cluster_pop_res[cid][:top_n]['article_id']),
                         "txt_cb_pop": list(text_cluster_pop_res[cid][:top_n]['article_id']),
-                        "img_cb_sim": list(image_cluster_sim_res[cid][:top_n]['article_id']),
-                        "txt_cb_sim": list(text_cluster_sim_res[cid][:top_n]['article_id']),
                         "product": list(product_code_res[cid][:top_n]['article_id']),
                         "pop": list(purchase_count[:top_n]['article_id']),
                         "user_cf": list(user_cf_res[cid][:top_n]),
@@ -385,7 +383,6 @@ class RecommenderSystem:
             metrics["recall"].append(recall)
             metrics["recall_num"].append(len(set(items)))
             metrics["map"].append(calculate_map_at_n(list(items)[:top_n], list(purchased)))
-        
         
         for cid, customer_df in tst_recall_records.items():
             purchased = purchase_dict[cid]
@@ -496,6 +493,17 @@ class RecommenderSystem:
             
         recommendations = all_pred_prob.groupby('customer_id').head(self.rank_top_n).reset_index(drop=True)
 
+        # recommend for customer did not make any purchase
+        # cold_start_user = set(self.test['customer_id']) - set(recommendations['customer_id'])
+        # cold_start_recommend = []
+        # for user in cold_start_user:
+        #     self.
+        #     cold_start_recommend.append()
+
+        # cold_start_recommend = pd.DataFrame(
+        #     data=[[user, ] for user in cold_start_user],
+
+        # )
         purchase_dict = self.test.groupby('customer_id')['article_id'].agg(list)
         map_at_12 = rank_calculate_mapk(purchase_dict, recommendations, self.rank_top_n)
         log(f"MAP@12 for {len(recommendations['customer_id'].unique())} users: {map_at_12}")
