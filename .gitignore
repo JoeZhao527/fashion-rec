@@ -166,5 +166,5 @@ dataset/
 cache/
 feature/
 
-*.ipynb
+# *.ipynb
 *.npy
