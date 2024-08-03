@@ -1,134 +1,150 @@
-import numpy as np
 import pandas as pd
-import seaborn as sns
-from matplotlib import pyplot as plt
-from tqdm import tqdm
-import os
-from typing import List, Dict
-import torch
-from collections import Counter
-
-from matplotlib import pyplot as plt
-import seaborn as sns
-
-import gensim
-assert gensim.models.word2vec.FAST_VERSION > -1
-
-from typing import Dict
-
-from sklearn.preprocessing import normalize
+import numpy as np
 import faiss
-from datetime import timedelta
+import os
+from tqdm import tqdm
 
-from scipy.sparse import coo_matrix
-import implicit
-import warnings
-warnings.filterwarnings("ignore")
+
+def items_compute_top_n_similarities(df, top_n=500, distance: str = "euclidean"):
+    article_ids = df['article_id'].values
+    features = np.vstack(df['feature'].values).astype(np.float32)
+    
+    if distance == "euclidean":
+        # Build the L2 index
+        index = faiss.IndexFlatL2(features.shape[1])
+        index.add(features)
+        
+        # Perform the search
+        distances, indices = index.search(features, top_n + 1)
+        
+        # Transform distance to similarity (smaller distance = more similar)
+        similarity_transform = lambda x: 1 / (1 + x)
+    
+    elif distance == "cosine":
+        # Normalize vectors for cosine similarity
+        faiss.normalize_L2(features)
+        index = faiss.IndexFlatIP(features.shape[1])
+        index.add(features)
+        
+        # Perform the search
+        distances, indices = index.search(features, top_n + 1)
+        
+        # Cosine similarity directly obtained (larger score = more similar)
+        similarity_transform = lambda x: x
+    else:
+        raise Exception("Unsupported similarity function")
+    
+    results = {}
+    
+    for i in range(len(article_ids)):
+        target_id = article_ids[i]
+        similar_ids = article_ids[indices[i, 1:top_n + 1]].tolist()  # Skip the item itself
+        similarity_scores = similarity_transform(distances[i, 1:top_n + 1]).tolist()
+        results[target_id] = {
+            'similar_items': np.array(similar_ids),
+            'similarity_scores': np.array(similarity_scores)
+        }
+    
+    return results
 
 
 class ContentBased:
     def __init__(
         self,
-        train: pd.DataFrame,
-        item_cluster: pd.DataFrame,
-        purchase_count,
-        media: str,
-        store_path: str,
-        *args,
-        **kwargs
+        image_feature_path: str,
+        text_feature_path: str,
+        feature_cache_dir: str,
+        top_k: int = 300
     ):
-        # item_to_cluster = dict(img_group.values)
-        cluster_to_item = {}
+        image_cb_euclidean_path = os.path.join(feature_cache_dir, "image_cb_euclidean.npy")
+        text_cb_euclidean_path = os.path.join(feature_cache_dir, "text_cb_euclidean.npy")
 
-        for cluster, group in tqdm(item_cluster.groupby("cluster"), desc=f"{media} cluster construct"):
-            cluster_to_item[cluster] = pd.merge(group, purchase_count, how='left').sort_values("count", ascending=False)
-        
-        item_feature = pd.DataFrame(np.load(store_path, allow_pickle=True).item().items(), columns=['article_id', 'feature'])
-        item_cluster = pd.merge(item_cluster, item_feature, on=['article_id'])
-        item_cluster_trn = pd.merge(train, item_cluster, on=['article_id'])
-        recent_purchased = item_cluster_trn.groupby("customer_id")
+        image_cb_cosine_path = os.path.join(feature_cache_dir, "image_cb_cosine.npy")
+        text_cb_cosine_path = os.path.join(feature_cache_dir, "text_cb_cosine.npy")
 
-        item_in_cluster = []
+        txt_feat = pd.DataFrame(np.load(text_feature_path, allow_pickle=True).item().items(), columns=['article_id', 'feature'])
+        img_feat = pd.DataFrame(np.load(image_feature_path, allow_pickle=True).item().items(), columns=['article_id', 'feature'])
 
-        for cid, group in tqdm(recent_purchased, desc=f"{media} cluster filter"):
-            prod_idx = list(group['cluster'].unique())
-            item_in_cluster.extend([(cid, aid) for aid in prod_idx])
+        # Computing top_k similar items for each item with euclidean distance, according to image feature vector
+        if not os.path.exists(image_cb_euclidean_path):
+            print(f"image content based (euclidean) computing...")
+            image_cb_euclidean = items_compute_top_n_similarities(img_feat, top_n=top_k, distance="euclidean")
+            np.save(image_cb_euclidean_path, image_cb_euclidean)
 
-        item_select_prod = pd.merge(
-            pd.DataFrame(item_in_cluster, columns=["customer_id", "cluster"]),
-            item_cluster[['article_id', 'cluster', 'feature']],
-            on='cluster',
-        )
+        image_cb_euclidean = np.load(image_cb_euclidean_path, allow_pickle=True).item()
 
-        # item_feature = {}
-        # if media == "image":
-        #     for item_id in tqdm(os.listdir(store_path), desc="Loading image feature"):
-        #         feature_file = os.path.join(store_path, f"{item_id}")
+        # Computing top_k similar items for each item with cosine similarity, according to image feature vector
+        if not os.path.exists(image_cb_cosine_path):
+            print(f"image content based (cosine) computing...")
+            image_cb_cosine = items_compute_top_n_similarities(img_feat, top_n=top_k, distance="cosine")
+            np.save(image_cb_cosine_path, image_cb_cosine)
 
-        #         # 0 for class token, 1 for average of all patch tokens
-        #         item_feature[item_id] = np.load(feature_file)[0]
-        # elif media == "text":
-        #     item_feature = np.load(store_path, allow_pickle=True).item()
-        # else:
-        #     raise Exception(f"Unexpected media: {media}")
-        
-        self.item_cluster = item_cluster
-        self.item_select_prod = item_select_prod
-        self.purchase_count = purchase_count
-        self.recent_purchased = recent_purchased
-        self.media = media
+        image_cb_cosine = np.load(image_cb_cosine_path, allow_pickle=True).item()
 
-    def cluster_popularity(self):
-        item_sorted_prod = pd.merge(self.purchase_count, self.item_select_prod, on=['article_id'])
+        # Computing top_k similar items for each item with euclidean distance, according to text feature vector
+        if not os.path.exists(text_cb_euclidean_path):
+            print(f"text content based (euclidean) computing...")
+            text_cb_euclidean = items_compute_top_n_similarities(txt_feat, top_n=top_k, distance="euclidean")
+            np.save(text_cb_euclidean_path, text_cb_euclidean)
 
-        item_sorted_prod_res = {_id: _df for _id, _df in tqdm(item_sorted_prod.groupby("customer_id"), desc=f"{self.media} cluster pop sorting")}
+        text_cb_euclidean = np.load(text_cb_euclidean_path, allow_pickle=True).item()
 
-        return item_sorted_prod_res
-    
-    def get_vectors(self, article_id_list: List[int]):
-        res = []
-        for aid in article_id_list:
-            if aid in self.item_feature:
-                res.append(self.item_feature[aid])
+        # Computing top_k similar items for each item with cosine similarity, according to text feature vector
+        if not os.path.exists(text_cb_cosine_path):
+            print(f"text content based (cosine) computing...")
+            text_cb_cosine = items_compute_top_n_similarities(txt_feat, top_n=top_k, distance="cosine")
+            np.save(text_cb_cosine_path, text_cb_cosine)
 
-        return np.array(res)
+        text_cb_cosine = np.load(text_cb_cosine_path, allow_pickle=True).item()
 
-    def cluster_content_similarity(self):
+        self.img_feat = img_feat
+        self.txt_feat = txt_feat
+        self.similarity_dict = {
+            ("image", "euclidean"): image_cb_euclidean,
+            ("image", "cosine"): image_cb_cosine,
+            ("text", "euclidean"): text_cb_euclidean,
+            ("text", "cosine"): text_cb_cosine
+        }
+
+    def filter_content(self, train: pd.DataFrame, articles: pd.DataFrame):
+        items_has_content = set(self.img_feat['article_id']).intersection(set(self.txt_feat['article_id']))
+
+        missing_content_articles = set(articles['article_id']) - set(items_has_content)
+        train = train[~train['article_id'].isin(missing_content_articles)]
+
+        return train
+
+    def recommend_items(self, train: pd.DataFrame, media: str, dist: str, N):
+        # select media and distance function
+
+        similarity_dict = self.similarity_dict[(media, dist)]
+        # Prepare the recommendation dictionary
         recommendations = {}
-        for cid, group in tqdm(self.item_select_prod.groupby("customer_id"), desc=f"{self.media} cluster sim sorting"):
-            candidates = group['article_id']
-            purchased_vector = np.stack(self.recent_purchased.get_group(cid)['feature'])
+        
+        users = list(train['customer_id'].unique())
+        # Iterate through each unique user
+        for user in tqdm(users, desc=f"Content-Based with {media} + {dist}"):
+            user_items = train[train['customer_id'] == user]['article_id'].tolist()
+            
+            candidates = []
+            candidates_score = []
 
-            # Step 2: Compute pairwise similarity (dot product) of all candidates and purchased items
-            similarity_matrix = np.dot(np.stack(group['feature']), purchased_vector.T)
+            for item in user_items:
+                candidates.append(similarity_dict[item]['similar_items'][:N])
+                candidates_score.append(similarity_dict[item]['similarity_scores'][:N])
+            
+            candidates = np.concatenate(candidates)
+            candidates_score = np.concatenate(candidates_score)
 
-            # Step 3: Aggregate the similarity score by sum. Each candidate article will have an aggregated score
-            aggregated_scores = similarity_matrix.sum(axis=1)
+            # Get the top N items with the highest scores
+            top_indices = np.argsort(candidates_score)[::-1]
+            
+            # Extract corresponding item IDs
+            top_items = [candidates[i] for i in top_indices]
+            
+            top_items = list(dict.fromkeys(top_items))[:N]
 
-            # Step 4: Sort the candidates according to the aggregated score
-            candidate_scores = pd.DataFrame({
-                'article_id': candidates,
-                'score': aggregated_scores
-            }).sort_values(by='score', ascending=False)
-
-            recommendations[cid] = candidate_scores
-
+            # Store in the recommendation dictionary
+            recommendations[user] = top_items
+        
         return recommendations
-    
-    # def cluster_content_similarity(self):
-    #     recommendations = {}
-    #     for cid, group in self.item_select_prod.groupby("customer_id"):
-    #         candidates = group['article_id']
-    #         purchased = self.recent_purchased[cid]['article_id']
-
-    #         print(candidates)
-    #         print(purchased)
-
-    #         # TODO:
-    #         # 1. get feature vector for each article in candidates and purchased
-    #         # 2. compute pairwise similarity (dot product) of all candidates and purchased items
-    #         # 3. aggregate the similarity score by sum. Each candidate article will have a aggregated score 
-    #         # 4. sort the candidates according to the aggregated score, store it in recommendations[cid] = pd.DataFrame(..., columns=["article_id", "score"])
-    #         exit(0)
-
-    #     return recommendations

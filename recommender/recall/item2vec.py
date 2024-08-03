@@ -196,7 +196,7 @@ def create_faiss_index(user_profiles, use_gpu=False, k=200):
 
 
 class Item2VecModel:
-    def __init__(self, train: pd.DataFrame, articles: pd.DataFrame, top_N: int, *args, **kwargs):
+    def __init__(self, train: pd.DataFrame, articles: pd.DataFrame, top_N: int, model_cfg: dict, *args, **kwargs):
         positive_samples = train.groupby('customer_id')['article_id'].agg(list).reset_index()
         all_articles = set(articles['article_id'].astype(str))
 
@@ -216,15 +216,16 @@ class Item2VecModel:
         for purchase in training_data:
             random.shuffle(purchase)
             
-        model = Word2Vec(sentences=training_data,
-                        epochs=10,
-                        min_count=10,
-                        vector_size=128,
-                        workers=6,
-                        sg=1,
-                        hs=0,
-                        negative=5,
-                        window=9999)
+        # model = Word2Vec(sentences=training_data,
+        #                 epochs=10,
+        #                 min_count=10,
+        #                 vector_size=128,
+        #                 workers=6,
+        #                 sg=1,
+        #                 hs=0,
+        #                 negative=5,
+        #                 window=9999)
+        model = Word2Vec(sentences=training_data, **model_cfg)
 
         item_vectors = {item: model.wv[item] for item in model.wv.index_to_key}
         vector_size = model.vector_size

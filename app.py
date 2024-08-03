@@ -31,8 +31,11 @@ recommender_system = RecommenderSystem(
     customer_path= path + "/dataset/customers.csv",
     train_path= path + "/dataset/split/fold_0/train.csv",
     test_path= path + "/dataset/split/fold_0/test.csv",
-    img_cluster_path="./resources/img_cluster_2000.csv",
-    dev_mode=True,
+    image_cluster_path="./resources/img_cluster_2000.csv",
+    image_feature_path="./feature/dino_image_emb.npy",
+    text_cluster_path="./resources/img_cluster_2000.csv",
+    text_feature_path="./feature/glove_text_emb.npy",
+    production_mode=False,
     cache_dir="./cache/fold_0"
 )
 

@@ -10,7 +10,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 
-def user_collaborative_recall(train: pd.DataFrame, top_N: int, *args, **kwargs):
+def user_collaborative_recall(train: pd.DataFrame, top_N: int, model_cfg: dict, *args, **kwargs):
     print(f"Start matrix factorization:")
     user_item_data = train[['customer_id', 'article_id']]
 
@@ -30,7 +30,8 @@ def user_collaborative_recall(train: pd.DataFrame, top_N: int, *args, **kwargs):
     sparse_matrix_csr = sparse_matrix.tocsr()
 
     # Initialize the ALS model
-    model = implicit.als.AlternatingLeastSquares(factors=20, regularization=0.1, iterations=50)
+    # model = implicit.als.AlternatingLeastSquares(factors=20, regularization=0.1, iterations=50)
+    model = implicit.als.AlternatingLeastSquares(**model_cfg)
 
     # Train the model on the sparse matrix
     model.fit(sparse_matrix_csr)
@@ -45,7 +46,5 @@ def user_collaborative_recall(train: pd.DataFrame, top_N: int, *args, **kwargs):
         index=list(user_mapping.keys()),
         data=list(np.vectorize(func)(ids))
     )
-
-    print(f"Recommendation shape: {ids.shape, score.shape}")
 
     return recommendations

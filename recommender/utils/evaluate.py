@@ -1,3 +1,7 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Evaluation
 def calculate_map_at_n(predictions, ground_truth, top_n=12):
     """
     Calculate Mean Average Precision @ N (MAP@N)
@@ -28,6 +32,37 @@ def calculate_map_at_n(predictions, ground_truth, top_n=12):
     
     return average_precision(predictions, ground_truth)
 
+def compute_metrics(recommendations, test, top_n=12):
+    purchase_dict = test.groupby('customer_id')['article_id'].agg(list)
+
+    metrics = {
+        "purchased": [],
+        "hit_num": [],
+        "precision": [],
+        "recall": [],
+        "recall_num": [],
+        "map": []
+    }
+    for cid, purchased in purchase_dict.items():
+        recommend_items = recommendations[cid][:top_n]
+
+        hit = len(set(purchased).intersection(set(recommend_items)))
+        precision = hit / len(recommend_items)
+        recall = hit / len(purchased)
+        purchased_num = len(purchased)
+        
+        metrics["purchased"].append(purchased_num)
+        metrics["hit_num"].append(hit)
+        metrics["precision"].append(precision)
+        metrics["recall"].append(recall)
+        metrics["recall_num"].append(len(set(recommend_items)))
+        metrics["map"].append(calculate_map_at_n(list(recommend_items), list(purchased)))
+
+    for k in metrics:
+        metrics[k] = np.array(metrics[k]).mean()
+
+    return metrics
+
 
 def rank_calculate_mapk(actual, predicted, k=12):
     mapk = 0
@@ -43,3 +78,5 @@ def rank_calculate_mapk(actual, predicted, k=12):
         mapk += score / min(len(actual_items), k)
     mapk /= len(predicted['customer_id'].unique())
     return mapk
+
+

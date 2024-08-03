@@ -50,7 +50,7 @@ def get_image_path(item_id):
     item_id_str = str(item_id)
     folder_number = '0' + item_id_str[:2]  # Ensure this logic matches your folder structure
     item_id_str = '0' + item_id_str
-    image_url = f'http://localhost:5000/images/{folder_number}/{item_id_str}.jpg'
+    image_url = f'http://127.0.0.1:5000/images/{folder_number}/{item_id_str}.jpg'
     # log(image_url)
     return image_url
 
@@ -73,10 +73,9 @@ class RecommenderSystem:
         recall_pipeline: List[
             Literal['postal', 'product', 'pop', 'user_cf', 'img', 'also_buy', 'item2vec_sim', 'item2vec_cls']
         ] = ['postal', 'product', 'pop', 'user_cf', 'img', 'also_buy', 'item2vec_sim', 'item2vec_cls'],
-        recall_select: bool = True,
+        recall_select: bool = False,
         recall_overwrite_cache: bool = False,
-        rank_overwrite_cache: bool = True,
-        
+        rank_overwrite_cache: bool = False,
     ):
         log_configuaration(
             article_path=article_path,
@@ -345,7 +344,7 @@ class RecommenderSystem:
             tst_recall_df = pd.DataFrame(test_recall)
 
             os.makedirs(self.recall_cache_dir, exist_ok=True)
-            res.to_csv(metrics_res_path, index=False)
+            res.to_csv(metrics_res_path)
             rak_recall_df.to_csv(rank_train_path, index=False)
             tst_recall_df.to_csv(rank_test_path, index=False)
             postal_code_agg.to_csv(postal_agg_path, index=False)
@@ -356,6 +355,9 @@ class RecommenderSystem:
 
         if self.recall_select:
             rak_recall_df, tst_recall_df = self._recall_selection(rak_recall_df, tst_recall_df)
+
+        self.age_group_agg = age_group_agg
+        self.postal_code_agg = postal_code_agg
 
         return res, rak_recall_df, tst_recall_df
     
@@ -398,6 +400,36 @@ class RecommenderSystem:
 
         log(len(pd.concat(tst_recall_records.values())))
         return pd.concat(rak_recall_records.values()), pd.concat(tst_recall_records.values())
+    
+    def _cold_start_recommend(self, cold_start_user):
+        # recommend for customer did not make any purchase
+        cold_start_users_df = self.customers[self.customers['customer_id'].isin(cold_start_user)]
+        cold_start_users_df['age_group'] = (cold_start_users_df['age'] // 5) * 5
+        # Initialize cold start recommendations
+        cold_start_recommend = []
+
+        # Process each cold start user
+        for idx, user_info in tqdm(cold_start_users_df.iterrows(), total=len(cold_start_users_df), desc="cold start preparing"):
+            customer_id = user_info['customer_id']
+            user_age_group = user_info['age_group']
+            user_postal_code = user_info['postal_code']
+            
+            # Get top articles from age group
+            age_group_recommendations = self.age_group_agg[self.age_group_agg['group'] == user_age_group].nlargest(12, 'count')['article_id'].tolist()
+            
+            # Get top articles from postal code
+            postal_code_recommendations = self.postal_code_agg[self.postal_code_agg['group'] == user_postal_code].nlargest(12, 'count')['article_id'].tolist()
+            
+            # Combine recommendations and keep top 12 unique items
+            combined_recommendations = list(set(age_group_recommendations + postal_code_recommendations))[:12]
+            
+            # Add to recommendations list
+            cold_start_recommend.append([customer_id, combined_recommendations])
+
+        # Create DataFrame for cold start recommendations
+        cold_start_recommendations = pd.DataFrame(cold_start_recommend, columns=['customer_id', 'recommendations'])
+
+        return cold_start_recommendations
     
     def _ranking(self):
         recommendation_path = os.path.join(self.ranking_cache_dir, "rank.csv")
@@ -493,25 +525,21 @@ class RecommenderSystem:
             
         recommendations = all_pred_prob.groupby('customer_id').head(self.rank_top_n).reset_index(drop=True)
 
-        # recommend for customer did not make any purchase
         # cold_start_user = set(self.test['customer_id']) - set(recommendations['customer_id'])
-        # cold_start_recommend = []
-        # for user in cold_start_user:
-        #     self.
-        #     cold_start_recommend.append()
+        # cold_recommendations = self._cold_start_recommend(cold_start_user)
 
-        # cold_start_recommend = pd.DataFrame(
-        #     data=[[user, ] for user in cold_start_user],
-
-        # )
         purchase_dict = self.test.groupby('customer_id')['article_id'].agg(list)
-        map_at_12 = rank_calculate_mapk(purchase_dict, recommendations, self.rank_top_n)
-        log(f"MAP@12 for {len(recommendations['customer_id'].unique())} users: {map_at_12}")
 
+        map_at_12 = rank_calculate_mapk(purchase_dict, recommendations, self.rank_top_n)
+        # map_at_12_cold = rank_calculate_mapk(purchase_dict, cold_recommendations, self.rank_top_n)
+
+        log(f"MAP@12 for {len(recommendations['customer_id'].unique())} hot users: {map_at_12}")
+        # log(f"MAP@12 for {len(cold_recommendations['customer_id'].unique())} cold users: {map_at_12_cold}")
+
+        # return pd.concat([recommendations, cold_recommendations])
         return recommendations
     
     def recommend(self, customer_id: str) -> List[int]:
-        log(self.recommendations)
         if customer_id in self.recommendations:
             return self.recommendations[customer_id]
         else:
