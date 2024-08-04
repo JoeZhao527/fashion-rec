@@ -88,36 +88,74 @@ def cold_start_agg(user_groups):
     return pd.concat(dataframes, ignore_index=True)
 
 
-def filter_transactions(train_df: pd.DataFrame, test_df: pd.DataFrame) -> Tuple[pd.DataFrame, Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]]:
+# def filter_transactions(train_df: pd.DataFrame, test_df: pd.DataFrame) -> Tuple[pd.DataFrame, Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]]:
+#     # Calculate the number of purchases per user in both datasets
+#     train_counts = train_df['customer_id'].value_counts()
+#     test_counts = test_df['customer_id'].value_counts()
+
+#     # Apply filters based on conditions
+
+#     # Condition 1: Users purchased more than 30 items in training set and more than 10 in testing set
+#     condition1_train = train_df[train_df['customer_id'].isin(train_counts[train_counts > 30].index) & train_df['customer_id'].isin(test_counts[test_counts > 10].index)]
+#     condition1_test = test_df[test_df['customer_id'].isin(train_counts[train_counts > 30].index) & test_df['customer_id'].isin(test_counts[test_counts > 10].index)]
+#     print_condition_summary("Condition 1", condition1_train, condition1_test, "Users purchased more than 30 items in training set and more than 10 in testing set")
+
+#     # Condition 2: Users purchased > 5 items and < 20 items in training set and more than 10 in testing set
+#     condition2_train = train_df[train_df['customer_id'].isin(train_counts[(train_counts > 5) & (train_counts < 20)].index) & train_df['customer_id'].isin(test_counts[test_counts > 10].index)]
+#     condition2_test = test_df[test_df['customer_id'].isin(train_counts[(train_counts > 5) & (train_counts < 20)].index) & test_df['customer_id'].isin(test_counts[test_counts > 10].index)]
+#     print_condition_summary("Condition 2", condition2_train, condition2_test, "Users purchased more than 5 items but less than 20 items in training set and more than 10 in testing set")
+
+#     # Condition 3: Users did not make any purchase in training set, but purchased more than 10 items in testing set
+#     condition3_users = test_counts[(test_counts > 10) & ~test_counts.index.isin(train_counts.index)]
+#     condition3_test = test_df[test_df['customer_id'].isin(condition3_users.index)]
+#     condition3_train = pd.DataFrame(columns=train_df.columns)  # Empty DataFrame as no transactions in training set for these users.
+#     print_condition_summary("Condition 3", condition3_train, condition3_test, "Users did not make any purchase in training set, but purchased more than 10 items in testing set")
+
+#     # Concatenate the results for the train DataFrame
+#     final_train_df = pd.concat([condition1_train, condition2_train, condition3_train]).drop_duplicates()
+#     final_test_df = pd.concat([condition1_test, condition2_test, condition3_test]).drop_duplicates()
+
+#     # Print aggregated information and return
+#     print_aggregated_info(final_train_df, final_test_df)
+#     return final_train_df, (condition1_test, condition2_test, condition3_test)
+
+def filter_transactions(train_df: pd.DataFrame, test_df: pd.DataFrame, verbose: bool = False) -> Tuple[pd.DataFrame, Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]]:
     # Calculate the number of purchases per user in both datasets
     train_counts = train_df['customer_id'].value_counts()
     test_counts = test_df['customer_id'].value_counts()
 
     # Apply filters based on conditions
-
-    # Condition 1: Users purchased more than 30 items in training set and more than 10 in testing set
+    # Condition 1
     condition1_train = train_df[train_df['customer_id'].isin(train_counts[train_counts > 30].index) & train_df['customer_id'].isin(test_counts[test_counts > 10].index)]
     condition1_test = test_df[test_df['customer_id'].isin(train_counts[train_counts > 30].index) & test_df['customer_id'].isin(test_counts[test_counts > 10].index)]
-    print_condition_summary("Condition 1", condition1_train, condition1_test, "Users purchased more than 30 items in training set and more than 10 in testing set")
 
-    # Condition 2: Users purchased > 5 items and < 20 items in training set and more than 10 in testing set
+    # Condition 2
     condition2_train = train_df[train_df['customer_id'].isin(train_counts[(train_counts > 5) & (train_counts < 20)].index) & train_df['customer_id'].isin(test_counts[test_counts > 10].index)]
     condition2_test = test_df[test_df['customer_id'].isin(train_counts[(train_counts > 5) & (train_counts < 20)].index) & test_df['customer_id'].isin(test_counts[test_counts > 10].index)]
-    print_condition_summary("Condition 2", condition2_train, condition2_test, "Users purchased more than 5 items but less than 20 items in training set and more than 10 in testing set")
 
-    # Condition 3: Users did not make any purchase in training set, but purchased more than 10 items in testing set
-    condition3_users = test_counts[(test_counts > 10) & ~test_counts.index.isin(train_counts.index)]
-    condition3_test = test_df[test_df['customer_id'].isin(condition3_users.index)]
-    condition3_train = pd.DataFrame(columns=train_df.columns)  # Empty DataFrame as no transactions in training set for these users.
-    print_condition_summary("Condition 3", condition3_train, condition3_test, "Users did not make any purchase in training set, but purchased more than 10 items in testing set")
+    # Condition 3
+    condition3_train = train_df[train_df['customer_id'].isin(train_counts[train_counts < 5].index) & train_df['customer_id'].isin(test_counts[test_counts > 10].index)]
+    condition3_test = test_df[test_df['customer_id'].isin(train_counts[train_counts < 5].index) & test_df['customer_id'].isin(test_counts[test_counts > 10].index)]
 
-    # Concatenate the results for the train DataFrame
-    final_train_df = pd.concat([condition1_train, condition2_train, condition3_train]).drop_duplicates()
-    final_test_df = pd.concat([condition1_test, condition2_test, condition3_test]).drop_duplicates()
+    # Condition 4
+    condition4_users = test_counts[(test_counts > 10) & ~test_counts.index.isin(train_counts.index)]
+    condition4_test = test_df[test_df['customer_id'].isin(condition4_users.index)]
+    condition4_train = pd.DataFrame(columns=train_df.columns)  # Empty DataFrame as no transactions in training set for these users.
 
-    # Print aggregated information and return
-    print_aggregated_info(final_train_df, final_test_df)
-    return final_train_df, (condition1_test, condition2_test, condition3_test)
+    # Concatenate results for the final DataFrame
+    final_train_df = pd.concat([condition1_train, condition2_train, condition3_train, condition4_train]).drop_duplicates()
+    final_test_df = pd.concat([condition1_test, condition2_test, condition3_test, condition4_test]).drop_duplicates()
+
+    if verbose:
+        print_condition_summary("Condition 1", condition1_train, condition1_test, "Users purchased more than 30 items in training set and more than 10 in testing set")
+        print_condition_summary("Condition 2", condition2_train, condition2_test, "Users purchased more than 5 items but less than 20 items in training set and more than 10 in testing set")
+        print_condition_summary("Condition 3", condition3_train, condition3_test, "Users made less than 5 purchases in training set but more than 10 purchases in testing set")
+        print_condition_summary("Condition 4", condition4_train, condition4_test, "Users did not make any purchase in training set, but purchased more than 10 items in testing set")
+
+        print_aggregated_info(final_train_df, final_test_df)
+    
+    return final_train_df, (condition1_test, condition2_test, condition3_test, condition4_test)
+
 
 def print_condition_summary(condition_name, train_df, test_df, description):
     print(f"{condition_name} - Description: {description}")
