@@ -152,9 +152,9 @@ def prepare_recommendations(train: pd.DataFrame, test_set: pd.DataFrame, new_use
     Recommend to existing users based on their purchase history, and new users based on their age and postal-code (region)
     """
     img_euclidean_recommend = content_based.recommend_items(train, media="image", dist="euclidean", N=recall_top_n)
-    img_cosine_recommend = content_based.recommend_items(train, media="image", dist="cosine", N=recall_top_n)
+    # img_cosine_recommend = content_based.recommend_items(train, media="image", dist="cosine", N=recall_top_n)
     txt_euclidean_recommend = content_based.recommend_items(train, media="text", dist="euclidean", N=recall_top_n)
-    txt_cosine_recommend = content_based.recommend_items(train, media="text", dist="cosine", N=recall_top_n)
+    # txt_cosine_recommend = content_based.recommend_items(train, media="text", dist="cosine", N=recall_top_n)
 
     purchase_count = popularity_recall(train=train)
 
@@ -232,9 +232,9 @@ def prepare_recommendations(train: pd.DataFrame, test_set: pd.DataFrame, new_use
 
     _recommend = {
         'img_euclidean': img_euclidean_recommend,
-        'img_cosine': img_cosine_recommend,
+        # 'img_cosine': img_cosine_recommend,
         'txt_euclidean': txt_euclidean_recommend,
-        'txt_cosine': txt_cosine_recommend,
+        # 'txt_cosine': txt_cosine_recommend,
         'popularity_all': popularity_all,
         'product_code': product_code_recommend,
         'postal_code': postal_code_recommend,
@@ -274,9 +274,9 @@ def prepare_recommendations(train: pd.DataFrame, test_set: pd.DataFrame, new_use
 
     exist_user_recommend = {
         'Image\n(Euclidean)': img_euclidean_recommend,
-        'Image\n(Cosine)': img_cosine_recommend,
+        # 'Image\n(Cosine)': img_cosine_recommend,
         'Text\n(Euclidean)': txt_euclidean_recommend,
-        'Text\n(Cosine)': txt_cosine_recommend,
+        # 'Text\n(Cosine)': txt_cosine_recommend,
         'Popularity\n(All)': popularity_all,
         'Popularity\n(Product)': product_code_recommend,
         'Popularity\n(Region)': postal_code_recommend,

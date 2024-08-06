@@ -130,12 +130,12 @@ def filter_transactions(train_df: pd.DataFrame, test_df: pd.DataFrame, verbose: 
     condition1_test = test_df[test_df['customer_id'].isin(train_counts[train_counts > 30].index) & test_df['customer_id'].isin(test_counts[test_counts > 0].index)]
 
     # Condition 2
-    condition2_train = train_df[train_df['customer_id'].isin(train_counts[(train_counts > 10) & (train_counts < 30)].index) & train_df['customer_id'].isin(test_counts[test_counts > 0].index)]
-    condition2_test = test_df[test_df['customer_id'].isin(train_counts[(train_counts > 10) & (train_counts < 30)].index) & test_df['customer_id'].isin(test_counts[test_counts > 0].index)]
+    condition2_train = train_df[train_df['customer_id'].isin(train_counts[(train_counts > 10) & (train_counts <= 30)].index) & train_df['customer_id'].isin(test_counts[test_counts > 0].index)]
+    condition2_test = test_df[test_df['customer_id'].isin(train_counts[(train_counts > 10) & (train_counts <= 30)].index) & test_df['customer_id'].isin(test_counts[test_counts > 0].index)]
 
     # Condition 3
-    condition3_train = train_df[train_df['customer_id'].isin(train_counts[train_counts < 10].index) & train_df['customer_id'].isin(test_counts[test_counts > 0].index)]
-    condition3_test = test_df[test_df['customer_id'].isin(train_counts[train_counts < 10].index) & test_df['customer_id'].isin(test_counts[test_counts > 0].index)]
+    condition3_train = train_df[train_df['customer_id'].isin(train_counts[train_counts <= 10].index) & train_df['customer_id'].isin(test_counts[test_counts > 0].index)]
+    condition3_test = test_df[test_df['customer_id'].isin(train_counts[train_counts <= 10].index) & test_df['customer_id'].isin(test_counts[test_counts > 0].index)]
 
     # Condition 4
     condition4_users = test_counts[(test_counts > 0) & ~test_counts.index.isin(train_counts.index)]
