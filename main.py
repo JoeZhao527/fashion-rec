@@ -5,7 +5,12 @@ import os
 from tqdm import tqdm
 import faiss
 from matplotlib import pyplot as plt
+from datetime import datetime
 
+def log(msg):
+    print(f"[{datetime.now()}]: {msg}")
+
+log(f"Start importing modules")
 from recommender.utils.data import (
     filter_transactions,
     filter_nan_age
@@ -47,6 +52,7 @@ fold_split_data_path = "./dataset/split"
 
 # %% [markdown]
 # # [1] Image & Text Content-Based Pre-Computations 
+log(f"Content-Based Computation starts")
 
 # %%
 # Computing most similar items for each item, with image and text feature
@@ -58,7 +64,7 @@ content_based = ContentBased(
 
 # %% [markdown]
 # # [2] Dataset Loading, Split and Filtering
-
+log(f"Dataset Loading, Split and Filtering")
 # %%
 # Load item data
 articles = pd.read_csv(article_path)
@@ -109,9 +115,9 @@ class Aggregate:
     def aggregate(self, test_set, train, keys, top_n: int):
         purchase_dict = test_set.groupby('customer_id')['article_id'].agg(list)
 
-        print(len(set(train['customer_id'])))
+        log(len(set(train['customer_id'])))
         test_users = set(train['customer_id']).intersection(list(purchase_dict.keys()))
-        print(len(set(test_users)))
+        log(len(set(test_users)))
         for cid in tqdm(test_users, desc="Aggregrating recall results"):
             purchased = purchase_dict[cid]
 
@@ -321,13 +327,13 @@ def fold_aggregate_metrics(fold_metrics):
 
 # %% [markdown]
 # ### Perform Recommendation and Aggregation for each folds
-
+log(f"Perform Recommendation and Aggregation for each folds")
 # %%
 fold_exist_user_recommend = []
 fold_new_user_recommend = []
 
 for fold, _data in fold_data.items():
-    print(f"=== Fold {fold} ===")
+    log(f"=== Fold {fold} ===")
     # Preparing train and test data for each fold
     train_df, test_df = _data
     train_df = content_based.filter_content(train_df, articles)
@@ -346,9 +352,12 @@ for fold, _data in fold_data.items():
     fold_exist_user_recommend.append(exist_user_recommend)
     fold_new_user_recommend.append(new_user_recommend)
 
+log(f"Recommendation done, now saving recommendation results")
 # %%
 np.save("fold_new_user_recommend.npy", fold_new_user_recommend)
 np.save("fold_exist_user_recommend.npy", fold_exist_user_recommend)
+
+log(f"Start evaluation")
 
 # %%
 all_exist_user_test_metrics = []
@@ -358,7 +367,7 @@ few_purchase_test_metrics = []
 new_user_test_metrics = []
 
 for i, (fold, _data) in enumerate(fold_data.items()):
-    print(f"Fold {fold}: Computing metrics...")
+    log(f"Fold {fold}: Computing metrics...")
     train_df, test_df = _data
     train_df = content_based.filter_content(train_df, articles)
     train_df = filter_nan_age(train_df, customers)
@@ -387,6 +396,8 @@ for i, (fold, _data) in enumerate(fold_data.items()):
 
 # %% [markdown]
 # ### Aggregating metrics of each fold
+
+log(f"Aggregating metrics of each fold")
 
 # %%
 all_user_mean, all_user_std = fold_aggregate_metrics(all_exist_user_test_metrics)
