@@ -13,19 +13,19 @@ def split_data(trans_file, output_dir):
     periods = [
         {
             "train": (datetime(2019, 1, 1), datetime(2019, 4, 1)),
-            "test": (datetime(2019, 4, 1), datetime(2019, 4, 15))
+            "test": (datetime(2019, 4, 1), datetime(2019, 4, 8))
         },
         {
             "train": (datetime(2019, 4, 1), datetime(2019, 7, 1)),
-            "test": (datetime(2019, 7, 1), datetime(2019, 7, 15))
+            "test": (datetime(2019, 7, 1), datetime(2019, 7, 8))
         },
         {
             "train": (datetime(2019, 7, 1), datetime(2019, 10, 1)),
-            "test": (datetime(2019, 10, 1), datetime(2019, 10, 15))
+            "test": (datetime(2019, 10, 1), datetime(2019, 10, 8))
         },
         {
             "train": (datetime(2019, 10, 1), datetime(2020, 1, 1)),
-            "test": (datetime(2020, 1, 1), datetime(2020, 1, 15))
+            "test": (datetime(2020, 1, 1), datetime(2020, 1, 8))
         }
     ]
     trans['t_dat'] = pd.to_datetime(trans['t_dat'])
