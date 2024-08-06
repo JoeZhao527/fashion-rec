@@ -126,19 +126,19 @@ def filter_transactions(train_df: pd.DataFrame, test_df: pd.DataFrame, verbose: 
 
     # Apply filters based on conditions
     # Condition 1
-    condition1_train = train_df[train_df['customer_id'].isin(train_counts[train_counts > 30].index) & train_df['customer_id'].isin(test_counts[test_counts > 10].index)]
-    condition1_test = test_df[test_df['customer_id'].isin(train_counts[train_counts > 30].index) & test_df['customer_id'].isin(test_counts[test_counts > 10].index)]
+    condition1_train = train_df[train_df['customer_id'].isin(train_counts[train_counts > 30].index) & train_df['customer_id'].isin(test_counts[test_counts > 0].index)]
+    condition1_test = test_df[test_df['customer_id'].isin(train_counts[train_counts > 30].index) & test_df['customer_id'].isin(test_counts[test_counts > 0].index)]
 
     # Condition 2
-    condition2_train = train_df[train_df['customer_id'].isin(train_counts[(train_counts > 5) & (train_counts < 20)].index) & train_df['customer_id'].isin(test_counts[test_counts > 10].index)]
-    condition2_test = test_df[test_df['customer_id'].isin(train_counts[(train_counts > 5) & (train_counts < 20)].index) & test_df['customer_id'].isin(test_counts[test_counts > 10].index)]
+    condition2_train = train_df[train_df['customer_id'].isin(train_counts[(train_counts > 10) & (train_counts < 30)].index) & train_df['customer_id'].isin(test_counts[test_counts > 0].index)]
+    condition2_test = test_df[test_df['customer_id'].isin(train_counts[(train_counts > 10) & (train_counts < 30)].index) & test_df['customer_id'].isin(test_counts[test_counts > 0].index)]
 
     # Condition 3
-    condition3_train = train_df[train_df['customer_id'].isin(train_counts[train_counts < 5].index) & train_df['customer_id'].isin(test_counts[test_counts > 10].index)]
-    condition3_test = test_df[test_df['customer_id'].isin(train_counts[train_counts < 5].index) & test_df['customer_id'].isin(test_counts[test_counts > 10].index)]
+    condition3_train = train_df[train_df['customer_id'].isin(train_counts[train_counts < 10].index) & train_df['customer_id'].isin(test_counts[test_counts > 0].index)]
+    condition3_test = test_df[test_df['customer_id'].isin(train_counts[train_counts < 10].index) & test_df['customer_id'].isin(test_counts[test_counts > 0].index)]
 
     # Condition 4
-    condition4_users = test_counts[(test_counts > 10) & ~test_counts.index.isin(train_counts.index)]
+    condition4_users = test_counts[(test_counts > 0) & ~test_counts.index.isin(train_counts.index)]
     condition4_test = test_df[test_df['customer_id'].isin(condition4_users.index)]
     condition4_train = pd.DataFrame(columns=train_df.columns)  # Empty DataFrame as no transactions in training set for these users.
 
@@ -147,10 +147,10 @@ def filter_transactions(train_df: pd.DataFrame, test_df: pd.DataFrame, verbose: 
     final_test_df = pd.concat([condition1_test, condition2_test, condition3_test, condition4_test]).drop_duplicates()
 
     if verbose:
-        print_condition_summary("Condition 1", condition1_train, condition1_test, "Users purchased more than 30 items in training set and more than 10 in testing set")
-        print_condition_summary("Condition 2", condition2_train, condition2_test, "Users purchased more than 5 items but less than 20 items in training set and more than 10 in testing set")
-        print_condition_summary("Condition 3", condition3_train, condition3_test, "Users made less than 5 purchases in training set but more than 10 purchases in testing set")
-        print_condition_summary("Condition 4", condition4_train, condition4_test, "Users did not make any purchase in training set, but purchased more than 10 items in testing set")
+        print_condition_summary("Condition 1", condition1_train, condition1_test, "Users purchased more than 30 items in training set and more than 0 in testing set")
+        print_condition_summary("Condition 2", condition2_train, condition2_test, "Users purchased more than 10 items but less than 30 items in training set and more than 0 in testing set")
+        print_condition_summary("Condition 3", condition3_train, condition3_test, "Users made less than 10 purchases in training set but more than 0 purchases in testing set")
+        print_condition_summary("Condition 4", condition4_train, condition4_test, "Users did not make any purchase in training set, but purchased more than 0 items in testing set")
 
         print_aggregated_info(final_train_df, final_test_df)
     
