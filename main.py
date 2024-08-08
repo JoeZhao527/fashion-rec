@@ -222,7 +222,11 @@ def prepare_recommendations(train: pd.DataFrame, test_set: pd.DataFrame, new_use
             "seed": 42,
             "vector_size": 256,
             "epochs": 15,
-            "negative": 5
+            "negative": 5,
+            "min_count": 10,
+            "workers": 8,
+            "sg": 1,
+            "hs": 0,
         }
     )
 
