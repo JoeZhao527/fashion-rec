@@ -220,9 +220,8 @@ def prepare_recommendations(train: pd.DataFrame, test_set: pd.DataFrame, new_use
         model_cfg={
             "window": 9999,
             "seed": 42,
-            "vector_size": 100,
-            "sample": 1.e-3,
-            "epochs": 10,
+            "vector_size": 256,
+            "epochs": 15,
             "negative": 5
         }
     )
